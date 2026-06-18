@@ -1,0 +1,3492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ScheduleMate · 课表通</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script>
+  // CDN 加载失败时的提示
+  window.addEventListener('DOMContentLoaded', function() {
+    if (typeof XLSX === 'undefined') {
+      setTimeout(function() {
+        if (typeof XLSX === 'undefined') {
+          document.getElementById('scheduleScroll').innerHTML = '<div class="empty-state"><span class="icon">⚠️</span><p>依赖库加载失败</p><p style="font-size:12px;margin-top:4px">请检查网络连接后刷新页面</p></div>';
+        }
+      }, 3000);
+    }
+  });
+</script>
+<style>
+  :root {
+    --primary: #0071e3; --primary-hover: #0077ed; --primary-light: #f0f6ff;
+    --success: #30b158; --success-bg: #f0fdf4;
+    --bg: #f5f5f7; --card: #ffffff;
+    --border: #e5e5e7; --text: #1d1d1f; --text-muted: #86868b;
+    --highlight: #fef9e7; --highlight-border: #f5c842; --radius: 18px;
+    --shadow-sm: 0 1px 3px rgba(0,0,0,.04);
+    --shadow: 0 4px 16px rgba(0,0,0,.04), 0 2px 4px rgba(0,0,0,.02);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: #f5f5f7; color: var(--text); min-height: 100vh; padding-bottom: 60px;
+    -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
+  }
+  .container { max-width: 1300px; margin: 0 auto; padding: 0 20px; }
+
+  /* ===== 头部 ===== */
+  .header {
+    text-align: center; padding: 40px 20px 24px;
+    margin: 0; color: var(--text);
+  }
+  .header .logo { font-size: 44px; display: block; margin-bottom: 6px; }
+  .header h1 { font-size: 28px; font-weight: 700; letter-spacing: -.5px; margin-bottom: 4px; color: var(--text); }
+  .header .subtitle { font-size: 14px; color: var(--text-muted); font-weight: 400; letter-spacing: .3px; }
+  .header .credit { font-size: 11px; color: #b0b0b5; margin-top: 6px; font-weight: 400; }
+
+  /* ===== 主导航标签 ===== */
+  .main-tabs {
+    display: flex; gap: 8px; margin-bottom: 24px;
+    background: transparent; border-radius: 0;
+    box-shadow: none; border: none;
+  }
+  .main-tab {
+    flex: 1; padding: 14px 20px; border: none; background: var(--card);
+    cursor: pointer; font-size: 14px; font-weight: 600; color: var(--text-muted);
+    transition: all .25s ease; text-align: center;
+    border-radius: 14px; box-shadow: var(--shadow-sm);
+  }
+  .main-tab:hover { color: var(--text); box-shadow: var(--shadow); transform: translateY(-1px); }
+  .main-tab.active { color: #fff; background: var(--primary); box-shadow: 0 4px 12px rgba(0,113,227,.25); }
+  .main-tab .tab-icon { font-size: 24px; display: block; margin-bottom: 2px; }
+  .main-tab .tab-label { font-size: 12px; opacity: .9; font-weight: 500; display: block; }
+
+  /* ===== 主面板 ===== */
+  .main-pane { display: none; }
+  .main-pane.active { display: block; }
+  .main-pane .card, .main-pane .scheduler-card { margin-bottom: 0; }
+
+  /* ===== 卡片 ===== */
+  .card {
+    background: var(--card); border-radius: var(--radius);
+    box-shadow: var(--shadow); margin-bottom: 18px;
+    border: 1px solid var(--border); transition: box-shadow .2s;
+  }
+  .card:hover { box-shadow: 0 4px 16px rgba(0,0,0,.08), 0 2px 4px rgba(0,0,0,.04); }
+
+  /* ===== 上传区 ===== */
+  .upload-card { border: none; }
+  .upload-area {
+    border: 2.5px dashed #cbd5e1; border-radius: var(--radius); padding: 36px 24px;
+    text-align: center; cursor: pointer; transition: all .25s; position: relative; overflow: hidden;
+  }
+  .upload-area::before {
+    content: ''; position: absolute; inset: 0;
+    background: radial-gradient(600px circle at 50% 50%, rgba(79,70,229,.04) 0%, transparent 70%);
+    opacity: 0; transition: opacity .3s;
+  }
+  .upload-area:hover::before, .upload-area.drag-over::before { opacity: 1; }
+  .upload-area:hover, .upload-area.drag-over { border-color: var(--primary); background: #fafaff; }
+  .upload-area.drag-over { border-style: solid; transform: scale(1.008); }
+  .upload-area.uploaded { border-style: solid; border-color: var(--success); background: var(--success-bg); padding: 18px 24px; }
+  .upload-area input { display: none; }
+  .upload-placeholder { position: relative; z-index: 1; }
+  .upload-placeholder .icon {
+    font-size: 52px; display: block; margin-bottom: 10px;
+    animation: float 3s ease-in-out infinite;
+  }
+  @keyframes float { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+  .upload-placeholder h3 { font-size: 17px; font-weight: 700; margin-bottom: 4px; color: var(--text); }
+  .upload-placeholder .hint { font-size: 13px; color: var(--text-muted); }
+  .upload-result { display: none; align-items: center; gap: 10px; justify-content: center; }
+  .upload-area.uploaded .upload-placeholder { display: none; }
+  .upload-area.uploaded .upload-result { display: flex; }
+  .upload-result .file-icon { font-size: 28px; }
+  .tag { font-size: 11px; background: var(--primary-light); color: #1e40af; padding: 3px 10px; border-radius: 12px; font-weight: 500; }
+
+  /* ===== 使用引导卡片 ===== */
+  .guide-card { border: 1px solid #e2e8f0; }
+  .guide-card .guide-header {
+    padding: 16px 20px; border-bottom: 1px solid #f1f5f9;
+    display: flex; align-items: center; gap: 8px;
+    font-size: 15px; font-weight: 700; color: var(--text);
+  }
+  .guide-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 16px; padding: 20px;
+  }
+  .guide-step {
+    display: flex; gap: 12px; align-items: flex-start;
+    padding: 16px; border-radius: 10px; background: #f8fafc;
+    transition: all .2s; border: 1px solid transparent;
+  }
+  .guide-step:hover { background: #fff; border-color: var(--border); box-shadow: var(--shadow-sm); }
+  .guide-step .step-num {
+    width: 36px; height: 36px; border-radius: 10px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 800; color: #fff;
+    background: linear-gradient(135deg, #6366f1, #4f46e5);
+  }
+  .guide-step .step-content h4 { font-size: 14px; font-weight: 700; margin-bottom: 3px; color: var(--text); }
+  .guide-step .step-content p { font-size: 12px; color: var(--text-muted); line-height: 1.5; }
+  .format-tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+  .format-tag { font-size: 10px; padding: 2px 8px; border-radius: 8px; background: #dbeafe; color: #1e40af; font-weight: 500; }
+
+  /* ===== 搜索栏 ===== */
+  .search-bar {
+    background: var(--card); border-radius: var(--radius);
+    box-shadow: var(--shadow); border: 1px solid var(--border);
+    padding: 16px 20px; margin-bottom: 18px; display: none;
+    align-items: center; gap: 12px; flex-wrap: wrap;
+  }
+  .search-bar label { font-weight: 700; font-size: 14px; white-space: nowrap; color: var(--text); }
+  .search-wrap { position: relative; flex: 1; min-width: 180px; }
+  .search-wrap input {
+    width: 100%; padding: 10px 16px; border: 1.5px solid var(--border); border-radius: 10px;
+    font-size: 14px; transition: all .15s; background: #fafbfc;
+  }
+  .search-wrap input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,70,229,.1); background: #fff; }
+  .search-wrap input::placeholder { color: #94a3b8; }
+  .suggestions { position: absolute; top: 100%; left: 0; right: 0; background: #fff; border: 1px solid var(--border); border-radius: 10px; margin-top: 4px; max-height: 200px; overflow-y: auto; z-index: 10; display: none; box-shadow: 0 8px 24px rgba(0,0,0,.12); }
+  .suggestions.show { display: block; }
+  .suggestions .item { padding: 10px 16px; cursor: pointer; font-size: 14px; border-bottom: 1px solid #f8fafc; transition: background .1s; }
+  .suggestions .item:hover { background: var(--primary-light); }
+  .match-info { font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .match-info.found { color: var(--success); }
+  .match-info.not-found { color: #ef4444; }
+
+  /* ===== 按钮 ===== */
+  .btn {
+    padding: 10px 22px; border-radius: 12px; border: none; cursor: pointer;
+    font-size: 13px; font-weight: 600; transition: all .2s ease; display: inline-flex;
+    align-items: center; gap: 6px; white-space: nowrap;
+  }
+  .btn:active { transform: scale(.97); }
+  .btn-primary { background: var(--primary); color: #fff; box-shadow: 0 2px 8px rgba(0,113,227,.2); }
+  .btn-primary:hover { background: var(--primary-hover); box-shadow: 0 4px 14px rgba(0,113,227,.3); }
+  .btn-outline { background: var(--card); color: var(--text); border: 1.5px solid var(--border); }
+  .btn-outline:hover { border-color: var(--primary); color: var(--primary); background: var(--primary-light); }
+  .btn-sm { padding: 7px 16px; font-size: 12px; border-radius: 10px; }
+  .btn:disabled { opacity: .35; cursor: not-allowed; pointer-events: none; }
+
+  /* ===== 课表卡片 ===== */
+  .schedule-card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--border); overflow: hidden; display: none; }
+  .schedule-card .hdr { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; background: #fafbfc; }
+  .schedule-card .hdr h3 { font-size: 15px; font-weight: 700; }
+  .stats { font-size: 13px; color: var(--text-muted); }
+  .stats strong { color: var(--primary); }
+  .scroll { overflow-x: auto; padding: 4px; }
+  .scroll table { border-collapse: collapse; min-width: 100%; }
+  .scroll th, .scroll td { border: 1px solid #d1d5db; padding: 6px 4px; text-align: center; vertical-align: middle; font-size: 12px; }
+  .scroll .col-time { background: #f8fafc; font-weight: 500; color: #475569; white-space: nowrap; font-size: 11px; min-width: 70px; }
+  .scroll .col-period { background: #f1f5f9; font-weight: 600; color: #334155; white-space: nowrap; min-width: 52px; font-size: 12px; }
+  .scroll .th-weekday { background: #4f46e5; color: #fff; font-weight: 700; font-size: 13px; padding: 8px 4px; }
+  .scroll .th-class { background: #6366f1; color: #eef2ff; font-weight: 500; font-size: 11px; padding: 5px 3px; }
+  .scroll .teacher-title { background: #312e81; color: #fff; font-weight: 700; font-size: 15px; padding: 8px 10px; text-align: center; letter-spacing: 2px; }
+  @media print { .scroll .teacher-title { background: #312e81 !important; color: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  .scroll tbody td { font-size: 12px; line-height: 1.4; min-width: 68px; }
+  .scroll tbody td .subject { font-weight: 500; color: #1e293b; }
+  .scroll tbody td .teacher { font-size: 10px; color: #64748b; display: block; }
+  .scroll tbody td.highlight { background: #fef3c7 !important; border: 2px solid #f59e0b !important; box-shadow: inset 0 0 0 1px rgba(245,158,11,.3); }
+  .scroll tbody td.highlight .subject { color: #92400e; font-weight: 700; }
+  .scroll tbody td.highlight .teacher { color: #b45309; font-weight: 600; }
+  .scroll tbody td.empty { color: #d1d5db; background: #fafafa; }
+  .legend { display: flex; gap: 16px; align-items: center; font-size: 12px; color: var(--text-muted); padding: 10px 20px; flex-wrap: wrap; border-top: 1px solid #f1f5f9; }
+  .legend .dot { display: inline-block; width: 14px; height: 14px; border-radius: 3px; margin-right: 4px; vertical-align: middle; }
+  .legend .dot.hl { background: #fef3c7; border: 2px solid #f59e0b; }
+  .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+  .empty-state .icon { font-size: 52px; margin-bottom: 14px; opacity: .5; }
+
+  /* ===== 页脚 ===== */
+  .footer { text-align: center; padding: 28px 20px 12px; color: var(--text-muted); font-size: 12px; }
+  .footer span { opacity: .6; }
+
+  /* ===== 课时计算面板 ===== */
+  .calc-panel { display: none; background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--border); margin-bottom: 18px; overflow: hidden; }
+  .calc-header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-weight: 700; font-size: 15px; color: var(--text); background: #fafbfc; }
+  .calc-body { display: flex; gap: 20px; padding: 16px; flex-wrap: wrap; }
+  .calc-calendar { flex: 1; min-width: 320px; }
+  .calc-calendar table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .calc-calendar th { background: #f1f5f9; padding: 6px 4px; text-align: center; font-weight: 600; font-size: 11px; border: 1px solid var(--border); }
+  .calc-calendar td { border: 1px solid var(--border); padding: 6px 4px; text-align: center; cursor: pointer; transition: all .15s; font-size: 11px; height: 52px; vertical-align: middle; }
+  .calc-calendar td:hover { background: #eef2ff; }
+  .calc-calendar td.off-month { color: #cbd5e1; cursor: default; background: #fafbfc; }
+  .calc-calendar td.holiday { background: #fef2f2; color: #ef4444; font-weight: 700; }
+  .calc-calendar td.holiday::after { content: '休'; display: block; font-size: 10px; }
+  .calc-calendar td.partial { background: #fffbeb; }
+  .calc-calendar td.partial::after { content: '部分'; display: block; font-size: 9px; color: #d97706; }
+  .calc-calendar td.swapped { background: #fffbeb; color: #d97706; }
+  .calc-calendar td.swapped::after { content: '换'; display: block; font-size: 10px; }
+  .calc-calendar td.normal { background: #fff; }
+  .calc-calendar td.today { box-shadow: inset 0 0 0 2px var(--primary); }
+  .calc-calendar td .day-num { font-weight: 600; font-size: 13px; }
+  .calc-summary { flex: 0 0 260px; min-width: 220px; }
+  .calc-summary h4 { font-size: 13px; margin-bottom: 10px; color: var(--text); }
+  .calc-summary table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .calc-summary th { background: #f1f5f9; padding: 6px 8px; text-align: left; font-weight: 600; border: 1px solid var(--border); }
+  .calc-summary td { padding: 6px 8px; border: 1px solid var(--border); }
+  .calc-summary .total-row { font-weight: 700; background: #eef2ff; font-size: 14px; }
+  .calc-summary .total-row td { color: var(--primary); }
+  .calc-legend { padding: 10px 20px; border-top: 1px solid #f1f5f9; font-size: 12px; color: var(--text-muted); background: #fafbfc; }
+
+  /* ===== 已上传态增强 ===== */
+  .upload-result .file-name { font-weight: 700; font-size: 14px; }
+  .upload-result .file-meta { font-size: 12px; color: var(--text-muted); }
+  .upload-result .check-icon { color: var(--success); font-size: 20px; }
+
+  @media print {
+    body { background: #fff !important; padding: 0; }
+    .header, .upload-card, .search-bar, .print-hide, .hdr, .legend, .guide-card { display: none !important; }
+    .schedule-card { box-shadow: none; border-radius: 0; border: none; display: block !important; width: 100%; }
+    .scroll { overflow: visible; width: 100%; }
+    .scroll table { font-size: 8px; width: 100%; table-layout: fixed; }
+    .scroll th, .scroll td { padding: 2px 1px; font-size: 8px; }
+    .scroll .col-time { font-size: 7px; min-width: auto; width: 8%; }
+    .scroll .col-period { font-size: 8px; min-width: auto; width: 5%; }
+    .scroll .th-weekday { background: #4f46e5 !important; color: #fff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 10px; padding: 4px 2px; }
+    .scroll .th-class { background: #6366f1 !important; color: #eef2ff !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 8px; padding: 3px 1px; }
+    .scroll tbody td { font-size: 8px; line-height: 1.2; }
+    .scroll tbody td .subject { font-size: 8px; }
+    .scroll tbody td .teacher { font-size: 7px; }
+    .scroll tbody td.highlight { background: #fef3c7 !important; border: 1.5px solid #f59e0b !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    @page { margin: 6mm; size: A4 landscape; }
+  }
+
+  /* ===== 排课配置面板 ===== */
+  .scheduler-card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--border); margin-bottom: 18px; overflow: hidden; display: none; }
+  .scheduler-card .sched-header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-weight: 700; font-size: 15px; color: var(--text); background: #fafbfc; }
+  .scheduler-card .sched-tabs { display: flex; gap: 4px; border-bottom: none; background: transparent; overflow-x: auto; padding: 8px 8px 0; }
+  .scheduler-card .sched-tab { padding: 8px 18px; border: none; background: transparent; cursor: pointer; font-size: 13px; font-weight: 500; color: var(--text-muted); border-radius: 10px 10px 0 0; transition: all .2s; white-space: nowrap; }
+  .scheduler-card .sched-tab:hover { color: var(--text); background: rgba(0,113,227,.06); }
+  .scheduler-card .sched-tab.active { color: var(--primary); background: var(--card); font-weight: 600; }
+  .scheduler-card .sched-body { padding: 16px 20px; max-height: 460px; overflow-y: auto; }
+  .cfg-table-wrap { overflow-x: scroll; -webkit-overflow-scrolling: touch; border: 1px solid #e2e8f0; border-radius: 6px; }
+  .cfg-table-wrap::-webkit-scrollbar { height: 8px; }
+  .cfg-table-wrap::-webkit-scrollbar-track { background: #f1f5f9; border-radius: 4px; }
+  .cfg-table-wrap::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+  .cfg-table-wrap::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  .cfg-table-wrap table { min-width: max-content; }
+  .scheduler-card .sched-pane { display: none; }
+  .scheduler-card .sched-pane.active { display: block; }
+  .cfg-section { margin-bottom: 16px; }
+  .cfg-section h4 { font-size: 13px; font-weight: 700; margin-bottom: 8px; color: var(--text); display: flex; align-items: center; gap: 6px; }
+  .cfg-row { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; flex-wrap: wrap; }
+  .cfg-row input, .cfg-row select { padding: 7px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 13px; transition: all .15s; }
+  .cfg-row input:focus, .cfg-row select:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0,113,227,.12); }
+  .cfg-row input[type="text"] { width: 100px; }
+  .cfg-row input[type="number"] { width: 56px; text-align: center; }
+  .cfg-row select { min-width: 80px; }
+  .cfg-table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 4px; }
+  .cfg-table th, .cfg-table td { border: 1px solid var(--border); padding: 5px 6px; text-align: center; vertical-align: middle; }
+  .cfg-table th { background: #f1f5f9; font-weight: 600; font-size: 11px; white-space: nowrap; position: sticky; top: 0; z-index: 1; }
+  .cfg-table td input { width: 42px; text-align: center; padding: 3px 4px; border: 1px solid transparent; border-radius: 4px; font-size: 12px; }
+  .cfg-table td input:focus { border-color: var(--primary); outline: none; background: #fff; }
+  .cfg-table td input.warn { border-color: #ef4444; background: #fef2f2; color: #ef4444; }
+  .cfg-table .row-total { font-weight: 700; background: #f8fafc; }
+  .cfg-table .row-total.warn { color: #ef4444; background: #fef2f2; }
+  .cfg-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; padding: 3px 8px; border-radius: 10px; background: #eef2ff; color: #1e40af; margin: 2px; cursor: default; }
+  .cfg-tag .remove { cursor: pointer; font-weight: 700; margin-left: 2px; opacity: .5; }
+  .cfg-tag .remove:hover { opacity: 1; color: #ef4444; }
+  .cfg-tag-list { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+  .btn-mini { padding: 3px 10px; font-size: 11px; border-radius: 6px; border: 1px solid var(--border); background: #fff; cursor: pointer; font-weight: 500; }
+  .btn-mini:hover { border-color: var(--primary); color: var(--primary); }
+  .btn-mini.danger { color: #ef4444; border-color: #fecaca; }
+  .btn-mini.danger:hover { background: #fef2f2; }
+  .badge { font-size: 10px; padding: 1px 6px; border-radius: 8px; font-weight: 600; }
+  .badge-ok { background: #f0fdf4; color: #16a34a; }
+  .badge-warn { background: #fef3c7; color: #d97706; }
+  .badge-err { background: #fef2f2; color: #ef4444; }
+  .sched-progress { padding: 12px 0; font-size: 13px; color: var(--text-muted); line-height: 1.8; }
+  .sched-progress .step-ok { color: #16a34a; }
+  .sched-progress .step-err { color: #ef4444; }
+  .cfg-section h4 { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 4px; }
+  .cfg-section h4 .arrow { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: #eef2ff; color: #4f46e5; font-size: 12px; transition: transform .2s, background .2s; flex-shrink: 0; }
+  .cfg-section h4:hover .arrow { background: #e0e7ff; }
+  .cfg-section h4 .hint { font-size: 10px; color: #94a3b8; font-weight: 400; opacity: 0; transition: opacity .2s; }
+  .cfg-section h4:hover .hint { opacity: 1; }
+  .cfg-section.collapsed .cfg-section-content { display: none; }
+  .cfg-section.collapsed h4 .arrow { transform: rotate(-90deg); background: #fef3c7; color: #d97706; }
+  .cfg-status { font-size: 10px; margin-left: 6px; padding: 1px 6px; border-radius: 8px; font-weight: 500; }
+  .cfg-status.ok { background: #f0fdf4; color: #16a34a; }
+  .cfg-status.warn { background: #fef3c7; color: #d97706; }
+
+  /* 排课模式切换 */
+  .mode-toggle-btn {
+    padding: 6px 16px; border: none; background: transparent;
+    cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text-muted);
+    border-radius: 6px; transition: all .15s;
+  }
+  .mode-toggle-btn:hover { color: var(--text); }
+  .mode-toggle-btn.active { background: #fff; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,.1); }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <span class="logo">📋</span>
+    <h1>ScheduleMate</h1>
+    <p class="subtitle">智能排课 · 课表筛选 · 课时计算</p>
+    <p class="credit">著作人：洪博hopes</p>
+  </div>
+
+  <!-- 三大功能导航 -->
+  <div class="main-tabs print-hide" id="mainTabs">
+    <button class="main-tab active" data-main="0">
+      <span class="tab-icon">🗓️</span>
+      <span class="tab-label">课表排课</span>
+    </button>
+    <button class="main-tab" data-main="1">
+      <span class="tab-icon">🔍</span>
+      <span class="tab-label">课表筛选</span>
+    </button>
+    <button class="main-tab" data-main="2">
+      <span class="tab-icon">📊</span>
+      <span class="tab-label">课时计算</span>
+    </button>
+  </div>
+
+  <!-- ===== 面板0：课表排课 ===== -->
+  <div class="main-pane active" data-main-pane="0">
+    <div class="scheduler-card" id="schedulerCard" style="display:block;margin-bottom:0;box-shadow:none;border:none">
+      <div class="sched-header">
+        <span>🗓️ 排课配置</span>
+        <div style="display:flex;gap:0;align-items:center;background:#f1f5f9;border-radius:8px;padding:2px;margin:0 12px">
+          <button class="mode-toggle-btn active" data-mode="weekday" id="modeWeekdayBtn">周一至周五</button>
+          <button class="mode-toggle-btn" data-mode="weekend" id="modeWeekendBtn">周六周日</button>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <button class="btn-mini" id="importConfigBtn">📥 导入配置</button>
+          <button class="btn-mini" id="exportConfigBtn">📤 导出配置</button>
+          <button class="btn-mini danger" id="resetConfigBtn">🗑 清空配置</button>
+          <button class="btn btn-primary btn-sm" id="startSchedBtn" style="margin-left:8px">🚀 开始排课</button>
+        </div>
+      </div>
+      <div class="sched-tabs">
+        <button class="sched-tab active" data-tab="0">⏰ 时段定义</button>
+        <button class="sched-tab" data-tab="1">📋 导入配置</button>
+        <button class="sched-tab" data-tab="2">⚙️ 约束设置</button>
+        <button class="sched-tab" data-tab="3">📊 排课结果</button>
+      </div>
+      <div class="sched-body">
+        <div class="sched-pane active" data-pane="0">
+          <div class="cfg-section" id="periodSection" style="background:#f0f9ff;padding:14px 16px;border-radius:12px;border:2px solid #bae6fd">
+            <h4 style="margin-bottom:6px;cursor:default">⏰ 时段定义 <span class="cfg-status" id="periodStatus" style="font-size:11px">未设置</span></h4>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px">设置每天的节次名称和时间，排课将按此表分配。首次使用请下载模板填写后上传。</p>
+            <div id="periodList"></div>
+            <div class="cfg-row" style="margin-bottom:6px;gap:10px">
+              <button class="btn btn-primary btn-sm" id="downloadPeriodTemplateBtn">📥 下载模板</button>
+              <button class="btn btn-outline btn-sm" id="uploadPeriodTemplateBtn">📤 上传导入</button>
+              <input type="file" id="periodTemplateInput" accept=".xlsx,.xls" style="display:none">
+            </div>
+            <div class="cfg-row" style="margin-bottom:0">
+              <button class="btn-mini" id="addPeriodBtn">+ 手动添加</button>
+            </div>
+          </div>
+        </div>
+        <div class="sched-pane" data-pane="1">
+          <div class="cfg-section" style="background:#f0f9ff;padding:14px 16px;border-radius:12px;border:2px solid #bae6fd">
+            <h4 style="margin-bottom:6px;cursor:default">📋 导入班级与教师</h4>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:10px">下载模板填写后上传，一次性导入：班级、科目、周课时、任课教师、日上限、晚节数、晚天数、晚自习模式（不限/连续/间隔）</p>
+            <div class="cfg-row" style="margin-bottom:0;gap:10px">
+              <button class="btn btn-primary btn-sm" id="downloadFullTemplateBtn">📥 下载模板</button>
+              <button class="btn btn-outline btn-sm" id="uploadFullTemplateBtn">📤 上传导入</button>
+              <input type="file" id="fullTemplateInput" accept=".xlsx,.xls" style="display:none">
+            </div>
+          </div>
+          <!-- 已导入数据概览 -->
+          <div class="cfg-section" id="dataOverview" style="display:none">
+            <h4 onclick="this.parentElement.classList.toggle('collapsed')"><span class="arrow">▼</span> 📊 已导入数据 <span class="cfg-status ok" id="overviewStatus"></span><span class="hint">点击收起</span></h4>
+            <div class="cfg-section-content">
+            <p style="font-size:11px;color:var(--text-muted);margin-bottom:6px">模板导入的数据概览。可修改每位教师的科目、日上限、晚自习范围及排法。</p>
+            <div id="classList"></div>
+            <div id="teacherList"></div>
+            </div>
+          </div>
+        </div>
+        <div class="sched-pane" data-pane="2">
+          <!-- 课程安排规则 -->
+          <div style="background:#f0f9ff;padding:14px 16px;border-radius:12px;border:2px solid #bae6fd;margin-bottom:14px">
+            <div style="font-size:13px;font-weight:700;color:#1e40af;margin-bottom:10px">📐 课程安排规则</div>
+            <div class="cfg-section" style="margin-bottom:12px">
+              <h4>📌 固定时段 <button class="btn-mini danger clear-constraint" data-target="fixedSlots" style="font-size:10px;margin-left:6px">清空</button></h4>
+              <p style="font-size:11px;color:var(--text-muted);margin-bottom:6px">将特定课程<strong>锁定</strong>到指定时间。如：每周一第1节固定为班会。</p>
+              <div id="fixedSlotList"></div>
+              <div class="cfg-row" style="margin-top:6px">
+                <select id="fsClass"></select>
+                <select id="fsWeekday"><option value="星期一">星期一</option><option value="星期二">星期二</option><option value="星期三">星期三</option><option value="星期四">星期四</option><option value="星期五">星期五</option><option value="星期六">星期六</option><option value="星期日">星期日</option></select>
+                <select id="fsPeriod"></select>
+                <input type="text" id="fsSubject" placeholder="科目" style="width:60px">
+                <select id="fsTeacher"><option value="">--教师--</option></select>
+                <button class="btn-mini" id="addFixedSlotBtn">+ 添加</button>
+              </div>
+            </div>
+            <div class="cfg-section" style="margin-bottom:12px">
+              <h4>🚫 不可连排 <button class="btn-mini danger clear-constraint" data-target="noConsecutive" style="font-size:10px;margin-left:6px">清空</button></h4>
+              <p style="font-size:11px;color:var(--text-muted);margin-bottom:6px">添加后该科目<strong>不会连续排在相邻两节</strong>（如上午不会出现两节连着的数学）。</p>
+              <div class="cfg-tag-list" id="noConsecList"></div>
+              <div class="cfg-row" style="margin-top:6px"><input type="text" id="newNoConsec" placeholder="科目名" style="width:80px"><button class="btn-mini" id="addNoConsecBtn">+ 添加</button></div>
+            </div>
+            <div class="cfg-section">
+              <h4>🔄 走班排课 <button class="btn-mini danger clear-constraint" data-target="rotatingGroups" style="font-size:10px;margin-left:6px">清空</button></h4>
+              <p style="font-size:11px;color:var(--text-muted);margin-bottom:4px">多个班级的同一科目<strong>同时上课</strong>，学生走班听课。</p>
+              <div id="rotatingGroupList"></div>
+              <div class="cfg-row" style="margin-top:8px;flex-wrap:wrap;gap:4px">
+                <select id="rgClass" style="min-width:90px"></select><span style="font-size:11px;color:var(--text-muted)">的</span>
+                <select id="rgSubject" style="min-width:70px"></select>
+                <input type="text" id="rgGroupName" placeholder="组名如：物理走班" style="width:100px;font-size:12px">
+                <button class="btn-mini" id="addToRotatingGroupBtn">+ 加入组</button>
+              </div>
+            </div>
+          </div>
+          <!-- 时间限制 -->
+          <div style="background:#fef2f2;padding:14px 16px;border-radius:12px;border:2px solid #fecaca;margin-bottom:14px">
+            <div style="font-size:13px;font-weight:700;color:#991b1b;margin-bottom:10px">🚫 时间限制</div>
+            <div class="cfg-section" style="margin-bottom:12px">
+              <h4>⏸️ 留空时段 <button class="btn-mini danger clear-constraint" data-target="emptySlots" style="font-size:10px;margin-left:6px">清空</button></h4>
+              <p style="font-size:11px;color:var(--text-muted);margin-bottom:6px">指定某班某节次<strong>不排任何课</strong>。如：周三第4节全校教研，各班留空。</p>
+              <div id="emptySlotList"></div>
+              <div class="cfg-row" style="margin-top:6px;flex-wrap:wrap;gap:4px">
+                <select id="esClass"></select>
+                <label style="font-size:11px;cursor:pointer;display:inline-flex;align-items:center;gap:3px;white-space:nowrap"><input type="checkbox" id="esAllClasses" style="width:14px;height:14px"> 全选</label>
+                <select id="esWeekday"><option value="星期一">星期一</option><option value="星期二">星期二</option><option value="星期三">星期三</option><option value="星期四">星期四</option><option value="星期五">星期五</option><option value="星期六">星期六</option><option value="星期日">星期日</option></select>
+                <select id="esPeriod"></select>
+                <button class="btn-mini" id="addEmptySlotBtn">+ 添加</button>
+                <label style="font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:4px"><input type="checkbox" id="esAllWeekdays" style="width:15px;height:15px"> 全部工作日</label>
+              </div>
+            </div>
+            <div class="cfg-section">
+              <h4>🙅 教师避让 <button class="btn-mini danger clear-constraint" data-target="teacherPrefs" style="font-size:10px;margin-left:6px">清空</button></h4>
+              <p style="font-size:11px;color:var(--text-muted);margin-bottom:6px">勾选后该教师此节次<strong>不排课</strong>。日上限/晚自习限制请在「导入配置→已导入数据」中设置。</p>
+              <div id="teacherPrefList"></div>
+            </div>
+          </div>
+        </div>
+        <div class="sched-pane" data-pane="3">
+          <div class="cfg-section">
+            <h4>📊 排课执行</h4>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">配置完成后点击「开始排课」，系统将自动生成课表并展示在下方。</p>
+            <button class="btn btn-primary" id="runSchedBtn" style="margin:8px 0">🚀 开始排课</button>
+            <div class="sched-progress" id="schedProgress"></div>
+          </div>
+        </div>
+      </div>
+      <div style="padding:8px 20px;border-top:1px solid #f1f5f9;font-size:11px;color:var(--text-muted);background:#fafbfc">
+        💡 配置自动保存在浏览器中 · 排课结果可导出Excel/PDF
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== 面板1：课表筛选 ===== -->
+  <div class="main-pane" data-main-pane="1">
+    <div class="card upload-card" style="margin-bottom:14px">
+      <div class="upload-area" id="uploadArea">
+        <div class="upload-placeholder">
+          <span class="icon">📂</span>
+          <h3>拖入 Excel 课表文件</h3>
+          <p class="hint">或点击此处选择文件 · 支持 .xlsx / .xls · 自动识别格式</p>
+        </div>
+        <div class="upload-result">
+          <span class="check-icon">✅</span>
+          <span class="file-name" id="uploadedName"></span>
+          <span class="file-meta" id="uploadedSize"></span>
+          <span class="tag" id="formatTag"></span>
+          <button class="btn btn-outline btn-sm" id="clearBtn">✕ 清除</button>
+        </div>
+        <input type="file" id="fileInput" accept=".xlsx,.xls">
+      </div>
+    </div>
+    <div class="search-bar" id="searchBar" style="display:flex;margin-bottom:14px">
+      <label for="nameInput">👤 教师姓名：</label>
+      <div class="search-wrap">
+        <input type="text" id="nameInput" placeholder="输入姓名筛选（包含匹配）…" autocomplete="off">
+        <div class="suggestions" id="suggestions"></div>
+      </div>
+      <button class="btn btn-primary" style="font-size:13px;padding:7px 16px" id="confirmBtn">确定</button>
+      <label style="display:flex;align-items:center;gap:4px;font-size:13px;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="selfOnly" style="width:16px;height:16px;cursor:pointer"> 只显示本人课程
+      </label>
+      <span style="font-size:12px;color:var(--text-muted)">已识别 <strong id="teacherCount">0</strong> 位教师</span>
+      <span class="match-info" id="matchInfo"></span>
+      <button class="btn btn-outline btn-sm" id="clearSearchBtn">显示全部</button>
+    </div>
+    <div style="text-align:center;padding:8px;font-size:12px;color:var(--text-muted)">
+      💡 支持节次网格、班级行、双行配对、合并格式、通用识别五种课表格式
+    </div>
+  </div>
+
+  <!-- ===== 面板2：课时计算 ===== -->
+  <div class="main-pane" data-main-pane="2">
+    <div class="calc-panel" id="calcPanel" style="display:block;margin-bottom:0">
+      <div class="calc-header">
+        <span>📊 课时计算</span>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="month" id="calcMonth" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+        </div>
+      </div>
+      <div class="calc-body">
+        <div class="calc-calendar" id="calcCalendar"></div>
+        <div class="calc-summary" id="calcSummary"></div>
+      </div>
+      <div class="calc-legend">
+        <span>💡 点击日期：<b>正常</b> → <b style="color:#ef4444">放假</b> → <b style="color:#d97706">选节次</b> → 恢复</span>
+      </div>
+    </div>
+    <div style="text-align:center;padding:8px;font-size:12px;color:var(--text-muted)">
+      💡 先在「课表筛选」中搜索教师，再切换到此面板计算该教师的月课时
+    </div>
+  </div>
+
+  <div class="schedule-card" id="scheduleCard">
+    <div class="hdr print-hide">
+      <h3 id="scheduleTitle">课程表</h3>
+      <span class="stats" id="teacherStats"></span>
+      <div style="display:flex;gap:8px;margin-left:auto">
+        <button class="btn btn-outline btn-sm" id="headerClearBtn" style="display:none">🗑 清除课表</button>
+        <button class="btn btn-outline" style="font-size:12px;padding:5px 14px" id="calcBtn" disabled>📊 课时计算</button>
+        <button class="btn btn-outline" style="font-size:12px;padding:5px 14px" id="exportExcelBtn" disabled>📥 导出Excel</button>
+        <button class="btn btn-primary" style="font-size:12px;padding:5px 14px" id="exportPdfBtn" disabled>🖨 导出PDF</button>
+      </div>
+    </div>
+    <div class="legend print-hide" id="legend" style="display:none">
+      <span><span class="dot hl"></span> 当前教师课程</span>
+    </div>
+    <div class="scroll" id="scheduleScroll">
+      <div class="empty-state"><span class="icon">📂</span><p>请上传课表文件</p></div>
+    </div>
+  </div>
+
+  <!-- 课时计算面板 -->
+  <div class="calc-panel print-hide" id="calcPanel">
+    <div class="calc-header">
+      <span>📊 课时计算</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input type="month" id="calcMonth" style="padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px">
+      </div>
+    </div>
+    <div class="calc-body">
+      <!-- 左侧：日历 -->
+      <div class="calc-calendar" id="calcCalendar"></div>
+      <!-- 右侧：汇总 -->
+      <div class="calc-summary" id="calcSummary"></div>
+    </div>
+    <div class="calc-legend">
+      <span>💡 点击日期：<b>正常</b> → <b style="color:#ef4444">放假</b> → <b style="color:#d97706">选节次</b> → 恢复</span>
+    </div>
+  </div>
+
+  <!-- 页脚 -->
+  <div class="footer print-hide">
+    <span>课表通 V1.2 · 著作人：洪博hopes</span>
+  </div>
+
+</div>
+
+<script>
+(function() {
+  const uploadArea = document.getElementById('uploadArea');
+  const fileInput = document.getElementById('fileInput');
+  const searchBar = document.getElementById('searchBar');
+  const scheduleCard = document.getElementById('scheduleCard');
+  const scheduleScroll = document.getElementById('scheduleScroll');
+  const nameInput = document.getElementById('nameInput');
+  const suggestions = document.getElementById('suggestions');
+  const matchInfo = document.getElementById('matchInfo');
+  const legend = document.getElementById('legend');
+  const teacherStats = document.getElementById('teacherStats');
+  let scheduleData = null, teacherSet = new Set(), highlightName = '';
+  const SUBJECTS = ['语文','数学','英语','日语','俄语','物理','化学','生物','政治','历史','地理','体育','音乐','美术','信息','通用','心理','阅读','听力','自习','训练','技术','劳动','实践','班会','道法'];
+  const WEEKDAY_MAP = {'周一':'星期一','周二':'星期二','周三':'星期三','周四':'星期四','周五':'星期五','周六':'星期六','周日':'星期日','星期一':'星期一','星期二':'星期二','星期三':'星期三','星期四':'星期四','星期五':'星期五','星期六':'星期六','星期日':'星期日','1':'星期一','2':'星期二','3':'星期三','4':'星期四','5':'星期五','6':'星期六','7':'星期日'};
+
+  // ========== 排课配置数据管理 ==========
+  const CONFIG_KEY = 'kebiaotong_sched_config';
+  const DEFAULT_PERIODS = [];
+  const DEFAULT_WORKDAYS = ['星期一','星期二','星期三','星期四','星期五'];
+  const WEEKEND_WORKDAYS = ['星期六','星期日'];
+
+  function defaultConfig() {
+    return {
+      periods: JSON.parse(JSON.stringify(DEFAULT_PERIODS)),
+      weekendPeriods: [
+        { name: '上午1', time: '8:00-8:45' },
+        { name: '上午2', time: '8:55-9:40' },
+        { name: '上午3', time: '10:00-10:45' },
+        { name: '上午4', time: '10:55-11:40' },
+        { name: '下午1', time: '14:30-15:15' },
+        { name: '下午2', time: '15:25-16:10' }
+      ],
+      classes: [],
+      teachers: [],
+      courseSettings: {},
+      teacherAssignments: {},
+      constraints: { fixedSlots: [], noConsecutive: [], emptySlots: [], rotatingGroups: [] },
+      workdays: [...DEFAULT_WORKDAYS],
+      workdayMode: 'weekday'
+    };
+  }
+
+  let scheduleConfig = defaultConfig();
+
+  function saveConfig() {
+    try { localStorage.setItem(CONFIG_KEY, JSON.stringify(scheduleConfig)); } catch(e) {}
+  }
+  function loadConfig() {
+    try {
+      var raw = localStorage.getItem(CONFIG_KEY);
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        scheduleConfig.periods = parsed.periods || JSON.parse(JSON.stringify(DEFAULT_PERIODS));
+        scheduleConfig.weekendPeriods = parsed.weekendPeriods || JSON.parse(JSON.stringify(defaultConfig().weekendPeriods));
+        scheduleConfig.classes = parsed.classes || [];
+        scheduleConfig.teachers = parsed.teachers || [];
+        scheduleConfig.courseSettings = parsed.courseSettings || {};
+        scheduleConfig.teacherAssignments = parsed.teacherAssignments || {};
+        scheduleConfig.constraints = parsed.constraints || { fixedSlots: [], noConsecutive: [], emptySlots: [] };
+        scheduleConfig.workdays = parsed.workdays || [...DEFAULT_WORKDAYS];
+        scheduleConfig.workdayMode = parsed.workdayMode || 'weekday';
+      }
+    } catch(e) {}
+  }
+  function resetConfigData() {
+    scheduleConfig = defaultConfig();
+    saveConfig();
+    renderAllConfigUI();
+  }
+
+  function getAllSubjects() {
+    var subs = new Set();
+    scheduleConfig.teachers.forEach(function(t) { t.subjects.forEach(function(s) { subs.add(s); }); });
+    scheduleConfig.constraints.noConsecutive.forEach(function(s) { subs.add(s); });
+    Object.values(scheduleConfig.courseSettings).forEach(function(cs) { Object.keys(cs).forEach(function(s) { subs.add(s); }); });
+    ['语文','数学','英语','物理','化学','生物','政治','历史','地理','体育','音乐','美术','信息','班会','自习'].forEach(function(s) { subs.add(s); });
+    return Array.from(subs).sort(function(a,b) { return a.localeCompare(b,'zh'); });
+  }
+
+  function genId() { return 'id_' + Math.random().toString(36).slice(2, 10); }
+
+  // ========== 排课验证 ==========
+  function validateConfig(cfg) {
+    var errors = [];
+    if (!cfg.classes.length) errors.push('请至少添加一个班级');
+    if (!cfg.teachers.length) errors.push('请至少添加一位教师');
+    if (!cfg.periods.length) errors.push('请至少定义一个时段');
+    cfg.classes.forEach(function(cls) {
+      var cs = cfg.courseSettings[cls.name] || {};
+      var total = Object.values(cs).reduce(function(a,b) { return a+b; }, 0);
+      if (total === 0) errors.push(cls.name + ' 未设置任何课程课时');
+      Object.keys(cs).forEach(function(sub) {
+        if (cs[sub] > 0) {
+          var hasTeacher = cfg.teachers.some(function(t) { return t.subjects.includes(sub); });
+          if (!hasTeacher) errors.push(cls.name + ' 的 ' + sub + ' 没有对应教师');
+        }
+      });
+    });
+    var availSlots = cfg.periods.length * cfg.workdays.length;
+    cfg.classes.forEach(function(cls) {
+      var cs = cfg.courseSettings[cls.name] || {};
+      var total = Object.values(cs).reduce(function(a,b) { return a+b; }, 0);
+      var fixedCount = cfg.constraints.fixedSlots.filter(function(fs) { return fs.classId === cls.id; }).length;
+      if (total > availSlots - fixedCount) {
+        errors.push(cls.name + ' 课时数(' + total + ')超过可用槽位(' + (availSlots - fixedCount) + ')');
+      }
+    });
+    return errors;
+  }
+
+  function detectConflicts(matrix, colLabels, periods, cfg) {
+    var conflicts = [];
+    // 教师冲突
+    periods.forEach(function(p, pi) {
+      var rd = matrix[pi] || [];
+      // 按星期分组检测教师冲突（同一教师同一天同一节次出现在多个班级才算冲突）
+      var teacherSlotsByWD = {};
+      rd.forEach(function(cell, ci) {
+        if (cell && cell.teacherId) {
+          var wd = colLabels[ci].weekday;
+          var key = cell.teacherId + '|' + wd;
+          if (!teacherSlotsByWD[key]) teacherSlotsByWD[key] = [];
+          teacherSlotsByWD[key].push(ci);
+        }
+      });
+      Object.keys(teacherSlotsByWD).forEach(function(key) {
+        var cols = teacherSlotsByWD[key];
+        if (cols.length > 1) {
+          var parts = key.split('|');
+          conflicts.push({ type: 'teacher_conflict', teacherId: parts[0], periodIdx: pi, weekday: parts[1], colIdxs: cols, msg: '教师冲突：' + parts[1] + ' 节次 ' + p.name + ' 出现在 ' + cols.length + ' 个班级' });
+        }
+      });
+    });
+    // 连排约束
+    cfg.constraints.noConsecutive.forEach(function(sub) {
+      colLabels.forEach(function(cl, ci) {
+        for (var pi = 0; pi < periods.length - 1; pi++) {
+          var sameHalf = function(a, b) {
+            if (a.name.indexOf('上午')>=0 && b.name.indexOf('上午')>=0) return true;
+            if (a.name.indexOf('下午')>=0 && b.name.indexOf('下午')>=0) return true;
+            if (a.name.indexOf('晚')>=0 && b.name.indexOf('晚')>=0) return true;
+            return false;
+          };
+          if (sameHalf(periods[pi], periods[pi+1])) {
+            var c1 = matrix[pi] && matrix[pi][ci];
+            var c2 = matrix[pi+1] && matrix[pi+1][ci];
+            if (c1 && c2 && c1.subject === sub && c2.subject === sub) {
+              conflicts.push({ type: 'consecutive', colIdx: ci, periodIdx: pi, subject: sub, msg: sub + ' 在 ' + cl.class + ' 连排（' + periods[pi].name + '-' + periods[pi+1].name + '）' });
+            }
+          }
+        }
+      });
+    });
+    // 教师日课时超限
+    cfg.teachers.forEach(function(t) {
+      var colGroups = {};
+      colLabels.forEach(function(cl, ci) { if (!colGroups[cl.weekday]) colGroups[cl.weekday] = []; colGroups[cl.weekday].push(ci); });
+      Object.keys(colGroups).forEach(function(wd) {
+        var cols = colGroups[wd];
+        // 该星期下该教师任教的班级集合，按班级去重
+        var seen = new Set();
+        cols.forEach(function(ci) {
+          periods.forEach(function(p, pi) {
+            var cell = matrix[pi] && matrix[pi][ci];
+            if (cell && cell.teacherId === t.id) {
+              var key = pi + '|' + colLabels[ci].class;
+              seen.add(key);
+            }
+          });
+        });
+        if (seen.size > (t.maxDaily || 4)) {
+          conflicts.push({ type: 'max_daily', teacherId: t.id, weekday: wd, count: seen.size, max: t.maxDaily||4, msg: t.name + ' 在 ' + wd + ' 有 ' + seen.size + ' 节课（上限' + (t.maxDaily||4) + '）' });
+        }
+      });
+    });
+
+    // 晚自习限制检测
+    cfg.teachers.forEach(function(t) {
+      var evPeriods = 0, evDays = new Set();
+      colLabels.forEach(function(cl, ci) {
+        periods.forEach(function(p, pi) {
+          if (p.name.indexOf('晚') >= 0) {
+            var cell = matrix[pi] && matrix[pi][ci];
+            if (cell && cell.teacherId === t.id) {
+              evPeriods++;
+              evDays.add(cl.weekday);
+            }
+          }
+        });
+      });
+      var maxEvP = t.maxEveningPerWeek != null ? t.maxEveningPerWeek : 9;
+      var maxEvD = t.maxEveningDays != null ? t.maxEveningDays : 9;
+      if (maxEvP < 9 && evPeriods > maxEvP) {
+        conflicts.push({ type: 'max_evening_periods', teacherId: t.id, count: evPeriods, max: maxEvP, msg: t.name + ' 每周晚自习 ' + evPeriods + ' 节（上限' + maxEvP + '节）' });
+      }
+      if (maxEvD < 9 && evDays.size > maxEvD) {
+        conflicts.push({ type: 'max_evening_days', teacherId: t.id, count: evDays.size, max: maxEvD, msg: t.name + ' 每周 ' + evDays.size + ' 天有晚自习（上限' + maxEvD + '天）' });
+      }
+      var minEvD = t.minEveningDays || 0;
+      if (minEvD > 0 && evDays.size < minEvD) {
+        conflicts.push({ type: 'min_evening_days', teacherId: t.id, count: evDays.size, min: minEvD, msg: t.name + ' 每周仅 ' + evDays.size + ' 天有晚自习（下限' + minEvD + '天）' });
+      }
+    });
+    return conflicts;
+  }
+
+  // ========== 排课引擎 ==========
+  function runScheduler(cfg, progressCb) {
+    var periods = cfg.periods, classes = cfg.classes, teachers = cfg.teachers;
+    var courseSettings = cfg.courseSettings, constraints = cfg.constraints, workdays = cfg.workdays;
+    var WO = workdays;
+
+    var colLabels = [];
+    WO.forEach(function(wd) {
+      classes.forEach(function(cls) {
+        colLabels.push({ weekday: wd, class: cls.name, classId: cls.id });
+      });
+    });
+
+    var matrix = Array.from({length: periods.length}, function() {
+      return Array.from({length: colLabels.length}, function() {
+        return { subject: '', teacher: '', teacherId: '' };
+      });
+    });
+
+    // Step 1: 填入固定时段
+    if (progressCb) progressCb('填入固定时段...');
+    constraints.fixedSlots.forEach(function(fs) {
+      var coli = colLabels.findIndex(function(cl) { return cl.classId === fs.classId && cl.weekday === fs.weekday; });
+      if (coli >= 0 && fs.periodIdx < periods.length) {
+        var teacher = teachers.find(function(t) { return t.id === fs.teacherId; });
+        matrix[fs.periodIdx][coli] = {
+          subject: fs.subject,
+          teacher: teacher ? teacher.name : '',
+          teacherId: fs.teacherId || ''
+        };
+      }
+    });
+
+    // 标记留空时段（设置为已占用，排课跳过）
+    var emptySlots = constraints.emptySlots || [];
+    emptySlots.forEach(function(es) {
+      var coli = colLabels.findIndex(function(cl) { return cl.classId === es.classId && cl.weekday === es.weekday; });
+      if (coli >= 0 && es.periodIdx < periods.length) {
+        matrix[es.periodIdx][coli] = { subject: '—', teacher: '留空', teacherId: '_empty_' };
+      }
+    });
+
+    // 走班组索引：{ classId|subject -> groupMembers }
+    var rotatingGroups = constraints.rotatingGroups || [];
+    var rotatingMap = {}; // classId|subject -> [{classId, subject}]
+    rotatingGroups.forEach(function(g) {
+      g.subjects.forEach(function(m) {
+        var key = m.classId + '|' + m.subject;
+        rotatingMap[key] = g.subjects;
+      });
+    });
+
+    // Step 2: 收集待分配任务（优先使用指定教师）
+    if (progressCb) progressCb('构建任务列表...');
+    var tasks = [];
+    var teacherAssignments = cfg.teacherAssignments || {};
+    classes.forEach(function(cls) {
+      var cs = courseSettings[cls.name] || {};
+      var ta = teacherAssignments[cls.name] || {};
+      Object.keys(cs).forEach(function(sub) {
+        var hours = cs[sub];
+        if (hours > 0) {
+          // 如果指定了教师，仅使用该教师；否则使用所有可教此科目的教师
+          var assignedId = ta[sub] || '';
+          var availTeachers;
+          if (assignedId) {
+            var t = teachers.find(function(x) { return x.id === assignedId; });
+            availTeachers = t ? [t] : teachers.filter(function(x) { return x.subjects.includes(sub); });
+          } else {
+            availTeachers = teachers.filter(function(t) { return t.subjects.includes(sub); });
+          }
+          if (availTeachers.length > 0) {
+            tasks.push({ classId: cls.id, className: cls.name, subject: sub, hours: hours, teacherIds: availTeachers.map(function(t) { return t.id; }) });
+          }
+        }
+      });
+    });
+
+    tasks.sort(function(a, b) {
+      var scoreA = (a.teacherIds.length * 10) + b.hours - a.hours;
+      var scoreB = (b.teacherIds.length * 10) + a.hours - b.hours;
+      return scoreA - scoreB;
+    });
+
+    // Step 3: 贪心构造
+    var totalSlots = tasks.reduce(function(s,t) { return s + t.hours; }, 0);
+    if (progressCb) progressCb('贪心分配（共 ' + totalSlots + ' 课时）...');
+    var placed = 0;
+
+    function isOccupied(pi, ci) { return matrix[pi][ci].subject !== ''; }
+    function teacherBusyCols(tid, pi) {
+      var busy = new Set();
+      matrix[pi].forEach(function(cell, ci) { if (cell.teacherId === tid) busy.add(ci); });
+      return busy;
+    }
+    function sameHalf(a, b) {
+      if (a.name.indexOf('上午')>=0 && b.name.indexOf('上午')>=0) return true;
+      if (a.name.indexOf('下午')>=0 && b.name.indexOf('下午')>=0) return true;
+      if (a.name.indexOf('晚')>=0 && b.name.indexOf('晚')>=0) return true;
+      return false;
+    }
+
+    function scoreSlot(pi, ci, task) {
+      if (isOccupied(pi, ci)) return -999;
+      var cl = colLabels[ci], wd = cl.weekday;
+      var score = 50;
+      // 教师冲突
+      for (var t = 0; t < task.teacherIds.length; t++) {
+        if (teacherBusyCols(task.teacherIds[t], pi).size > 0) score -= 100;
+      }
+      // 时间分散度
+      var sameClassCols = [];
+      colLabels.forEach(function(l, i) { if (l.weekday === wd && l.classId === task.classId) sameClassCols.push(i); });
+      sameClassCols.forEach(function(i) {
+        if (i !== ci && matrix[pi][i] && matrix[pi][i].subject === task.subject) score -= 20;
+      });
+      periods.forEach(function(p, i) {
+        if (i !== pi) {
+          sameClassCols.forEach(function(sci) {
+            if (matrix[i][sci] && matrix[i][sci].subject === task.subject) score -= 5;
+          });
+        }
+      });
+      // 不连排
+      if (constraints.noConsecutive.indexOf(task.subject) >= 0) {
+        if (pi > 0 && sameHalf(periods[pi], periods[pi-1])) {
+          sameClassCols.forEach(function(sci) {
+            if (matrix[pi-1][sci] && matrix[pi-1][sci].subject === task.subject) score -= 30;
+          });
+        }
+        if (pi < periods.length - 1 && sameHalf(periods[pi], periods[pi+1])) {
+          sameClassCols.forEach(function(sci) {
+            if (matrix[pi+1][sci] && matrix[pi+1][sci].subject === task.subject) score -= 30;
+          });
+        }
+      }
+      // 教师偏好
+      for (var t2 = 0; t2 < task.teacherIds.length; t2++) {
+        var tchr = teachers.find(function(x) { return x.id === task.teacherIds[t2]; });
+        if (tchr && tchr.preferences && tchr.preferences[wd] && tchr.preferences[wd].indexOf(pi) >= 0) score -= 5;
+      }
+      // 教师日课时
+      for (var t3 = 0; t3 < task.teacherIds.length; t3++) {
+        var tc = teachers.find(function(x) { return x.id === task.teacherIds[t3]; });
+        if (tc) {
+          var dayCount = 0;
+          periods.forEach(function(p, i) {
+            sameClassCols.forEach(function(sci) {
+              if (matrix[i][sci] && matrix[i][sci].teacherId === tc.id) dayCount++;
+            });
+          });
+          if (dayCount >= (tc.maxDaily || 4)) score -= 50;
+          else if (dayCount >= (tc.maxDaily || 4) - 1) score -= 10;
+        }
+      }
+
+      // 晚自习限制评分（检查该教师全局排课，而非仅当前班级）
+      if (periods[pi].name.indexOf('晚') >= 0) {
+        for (var t4 = 0; t4 < task.teacherIds.length; t4++) {
+          var tev = teachers.find(function(x) { return x.id === task.teacherIds[t4]; });
+          if (tev) {
+            // 统计该教师全局的晚自习情况
+            var evPeriods = 0, evDaySet = new Set();
+            periods.forEach(function(p, i) {
+              if (p.name.indexOf('晚') >= 0) {
+                // 检查所有列（不仅是当前班级）
+                for (var gci = 0; gci < colLabels.length; gci++) {
+                  if (matrix[i][gci] && matrix[i][gci].teacherId === tev.id) {
+                    evPeriods++;
+                    evDaySet.add(colLabels[gci].weekday);
+                  }
+                }
+              }
+            });
+            var maxEvPeriod = tev.maxEveningPerWeek != null ? tev.maxEveningPerWeek : 9;
+            var maxEvDays = tev.maxEveningDays != null ? tev.maxEveningDays : 9;
+            var minEvDays = tev.minEveningDays || 0;
+            // 硬上限：超过时大幅扣分
+            if (evPeriods >= maxEvPeriod) score -= 500;
+            if (!evDaySet.has(wd) && evDaySet.size >= maxEvDays) score -= 500;
+            // 软下限：低于最低天数时，晚间时段加分（鼓励排晚自习）
+            if (minEvDays > 0 && evDaySet.size < minEvDays) score += 30;
+            // 连续/间隔偏好
+            var mode = tev.eveningMode || '不限';
+            if (mode !== '不限' && !evDaySet.has(wd) && evDaySet.size > 0) {
+              var WO2 = cfg.workdays;
+              var evDayIndices = [];
+              evDaySet.forEach(function(d) {
+                var di = WO2.indexOf(d);
+                if (di >= 0) evDayIndices.push(di);
+              });
+              var curIdx = WO2.indexOf(wd);
+              var isAdjacent = evDayIndices.some(function(di) { return Math.abs(di - curIdx) === 1; });
+              if (mode === '连续' && isAdjacent) score += 20;
+              if (mode === '连续' && !isAdjacent) score -= 15;
+              if (mode === '间隔' && isAdjacent) score -= 15;
+              if (mode === '间隔' && !isAdjacent) score += 20;
+            }
+          }
+        }
+      }
+
+      // 上午偏好主科
+      if (periods[pi].name.indexOf('上午')>=0 && ['语文','数学','英语'].indexOf(task.subject) >= 0) score += 3;
+      if (periods[pi].name.indexOf('下午')>=0 && ['体育','美术','音乐'].indexOf(task.subject) >= 0) score += 3;
+
+      // 走班组约束：同组成员优先选相同(星期,节次)
+      var rgKey = task.classId + '|' + task.subject;
+      var rgMembers = rotatingMap[rgKey];
+      if (rgMembers) {
+        var hasMatch = false;
+        rgMembers.forEach(function(m) {
+          if (m.classId === task.classId && m.subject === task.subject) return; // 跳过自己
+          // 查找该成员已放置的槽位
+          for (var mci = 0; mci < colLabels.length; mci++) {
+            if (colLabels[mci].classId === m.classId && matrix[pi][mci] && matrix[pi][mci].subject === m.subject) {
+              hasMatch = true;
+            }
+          }
+        });
+        if (hasMatch) score += 80; // 匹配其他组员的时间，大幅奖励
+        else {
+          // 检查是否有组员已经占了这个(星期,节次)的其他班级列
+          var anyMemberHere = false;
+          rgMembers.forEach(function(m) {
+            if (m.classId === task.classId && m.subject === task.subject) return;
+            for (var mci2 = 0; mci2 < colLabels.length; mci2++) {
+              if (colLabels[mci2].weekday === wd && colLabels[mci2].classId === m.classId &&
+                  matrix[pi][mci2] && matrix[pi][mci2].subject === m.subject) {
+                anyMemberHere = true;
+              }
+            }
+          });
+          if (!anyMemberHere && rgMembers.length > 1) score -= 5; // 略惩罚不同步
+        }
+      }
+
+      return score;
+    }
+
+    var unplaced = [];
+    tasks.forEach(function(task) {
+      for (var h = 0; h < task.hours; h++) {
+        var bestScore = -9999, bestPi = -1, bestCi = -1, bestTid = '';
+        var clsCols = [];
+        colLabels.forEach(function(cl, ci) { if (cl.classId === task.classId) clsCols.push(ci); });
+
+        for (var cii = 0; cii < clsCols.length; cii++) {
+          var ci = clsCols[cii];
+          for (var pi = 0; pi < periods.length; pi++) {
+            var sc = scoreSlot(pi, ci, task);
+            if (sc > bestScore) {
+              for (var tii = 0; tii < task.teacherIds.length; tii++) {
+                var tid = task.teacherIds[tii];
+                if (teacherBusyCols(tid, pi).size === 0) {
+                  bestScore = sc; bestPi = pi; bestCi = ci; bestTid = tid;
+                  break;
+                }
+              }
+              if (bestPi !== pi) { bestScore = sc; bestPi = pi; bestCi = ci; bestTid = task.teacherIds[0]; }
+            }
+          }
+        }
+
+        if (bestPi >= 0) {
+          var t = teachers.find(function(x) { return x.id === bestTid; });
+          matrix[bestPi][bestCi] = { subject: task.subject, teacher: t ? t.name : '', teacherId: bestTid };
+          placed++;
+        } else {
+          unplaced.push({ className: task.className, subject: task.subject, remaining: task.hours - h });
+          break;
+        }
+      }
+    });
+
+    // Step 3.5: 走班组对齐——确保同组成员在同一(星期,节次)
+    if (rotatingGroups.length > 0 && progressCb) progressCb('对齐走班组...');
+    rotatingGroups.forEach(function(g) {
+      if (g.subjects.length < 2) return;
+      // 找到第一个成员的已放置槽位作为模板
+      var firstM = g.subjects[0];
+      var templateSlots = []; // [{pi, wd}]
+      for (var pi = 0; pi < periods.length; pi++) {
+        for (var ci = 0; ci < colLabels.length; ci++) {
+          if (colLabels[ci].classId === firstM.classId && matrix[pi][ci] && matrix[pi][ci].subject === firstM.subject) {
+            templateSlots.push({ pi: pi, wd: colLabels[ci].weekday });
+          }
+        }
+      }
+      if (!templateSlots.length) return;
+      // 为其他成员对齐
+      for (var mi = 1; mi < g.subjects.length; mi++) {
+        var mem = g.subjects[mi];
+        // 找到该成员的当前放置
+        var memSlots = [];
+        for (var pi2 = 0; pi2 < periods.length; pi2++) {
+          for (var ci2 = 0; ci2 < colLabels.length; ci2++) {
+            if (colLabels[ci2].classId === mem.classId && matrix[pi2][ci2] && matrix[pi2][ci2].subject === mem.subject) {
+              memSlots.push({ pi: pi2, wd: colLabels[ci2].weekday, ci: ci2 });
+            }
+          }
+        }
+        // 尝试将成员的槽位移到模板位置
+        for (var si = 0; si < Math.min(templateSlots.length, memSlots.length); si++) {
+          var tpl = templateSlots[si];
+          // 找到该成员在模板(星期,节次)对应的列
+          var targetCi = -1;
+          for (var ci3 = 0; ci3 < colLabels.length; ci3++) {
+            if (colLabels[ci3].classId === mem.classId && colLabels[ci3].weekday === tpl.wd) {
+              targetCi = ci3;
+              break;
+            }
+          }
+          if (targetCi >= 0 && !matrix[tpl.pi][targetCi].subject) {
+            // 交换：把成员的课移到目标槽位
+            matrix[tpl.pi][targetCi] = matrix[memSlots[si].pi][memSlots[si].ci];
+            matrix[memSlots[si].pi][memSlots[si].ci] = { subject: '', teacher: '', teacherId: '' };
+          }
+        }
+      }
+    });
+
+    // Step 4: 局部优化
+    if (progressCb) progressCb('局部优化（消除冲突）...');
+    var optimized = 0, maxIter = 300;
+    for (var iter = 0; iter < maxIter; iter++) {
+      var confs = detectConflicts(matrix, colLabels, periods, cfg);
+      if (confs.length === 0) break;
+      var fixed = false;
+
+      for (var ci2 = 0; ci2 < confs.length; ci2++) {
+        var conflict = confs[ci2];
+        if (conflict.type === 'teacher_conflict') {
+          var periodIdx = conflict.periodIdx, colIdxs = conflict.colIdxs, teacherId = conflict.teacherId;
+          for (var idx = 1; idx < colIdxs.length; idx++) {
+            var ci = colIdxs[idx];
+            var cell = matrix[periodIdx][ci];
+            var altTeachers = teachers.filter(function(t) {
+              return t.id !== teacherId && t.subjects.indexOf(cell.subject) >= 0 && teacherBusyCols(t.id, periodIdx).size === 0;
+            });
+            if (altTeachers.length > 0) {
+              matrix[periodIdx][ci].teacherId = altTeachers[0].id;
+              matrix[periodIdx][ci].teacher = altTeachers[0].name;
+              fixed = true; optimized++;
+            }
+          }
+        }
+        if (conflict.type === 'consecutive') {
+          var colIdx = conflict.colIdx, pi = conflict.periodIdx;
+          var clsId = colLabels[colIdx].classId;
+          var clsCols2 = [];
+          colLabels.forEach(function(cl, ci) { if (cl.classId === clsId) clsCols2.push(ci); });
+          for (var swapPi = 0; swapPi < periods.length; swapPi++) {
+            if (swapPi === pi || swapPi === pi + 1) continue;
+            for (var s = 0; s < clsCols2.length; s++) {
+              var sci = clsCols2[s];
+              if (matrix[swapPi][sci] && matrix[swapPi][sci].subject &&
+                  matrix[swapPi][sci].subject !== matrix[pi][sci].subject) {
+                var tmp = matrix[pi][sci];
+                matrix[pi][sci] = matrix[swapPi][sci];
+                matrix[swapPi][sci] = tmp;
+                fixed = true; optimized++;
+                break;
+              }
+            }
+            if (fixed) break;
+          }
+        }
+        if (fixed) break;
+      }
+      if (!fixed) break;
+    }
+
+    var finalConflicts = detectConflicts(matrix, colLabels, periods, cfg);
+
+    var sd = {
+      weekdays: WO,
+      classes: colLabels.map(function(cl) { return cl.class; }),
+      colLabels: colLabels.map(function(cl) { return { weekday: cl.weekday, class: cl.class }; }),
+      periods: periods.map(function(p) { return { time: p.time, name: p.name }; }),
+      matrix: matrix.map(function(row) { return row.map(function(cell) { return { subject: cell.subject, teacher: cell.teacher }; }); })
+    };
+
+    return { scheduleData: sd, conflicts: finalConflicts, placed: placed, total: totalSlots, optimized: optimized };
+  }
+
+  // ========== 配置面板 UI ==========
+  var schedulerCard = document.getElementById('schedulerCard');
+
+  (function initSchedTabs() {
+    var tabs = document.querySelectorAll('#schedulerCard .sched-tab');
+    var panes = document.querySelectorAll('#schedulerCard .sched-pane');
+    tabs.forEach(function(tab) {
+      tab.addEventListener('click', function() {
+        tabs.forEach(function(t) { t.classList.remove('active'); });
+        panes.forEach(function(p) { p.classList.remove('active'); });
+        this.classList.add('active');
+        var pane = document.querySelector('#schedulerCard .sched-pane[data-pane="' + this.dataset.tab + '"]');
+        if (pane) pane.classList.add('active');
+      });
+    });
+  })();
+
+  function renderPeriodList() {
+    var el = document.getElementById('periodList');
+    el.innerHTML = scheduleConfig.periods.map(function(p, i) {
+      return '<div class="cfg-row">' +
+        '<input type="text" value="' + escAttr(p.name) + '" data-idx="' + i + '" class="period-name" style="width:80px" placeholder="节次名">' +
+        '<input type="text" value="' + escAttr(p.time) + '" data-idx="' + i + '" class="period-time" style="width:120px" placeholder="如 8:00-8:45">' +
+        '<button class="btn-mini danger period-del" data-idx="' + i + '">✕</button>' +
+        '</div>';
+    }).join('');
+    el.querySelectorAll('.period-name').forEach(function(inp) {
+      inp.addEventListener('change', function() {
+        scheduleConfig.periods[parseInt(this.dataset.idx)].name = this.value;
+        saveConfig();
+      });
+    });
+    el.querySelectorAll('.period-time').forEach(function(inp) {
+      inp.addEventListener('change', function() {
+        scheduleConfig.periods[parseInt(this.dataset.idx)].time = this.value;
+        saveConfig();
+      });
+    });
+    el.querySelectorAll('.period-del').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        scheduleConfig.periods.splice(parseInt(this.dataset.idx), 1);
+        saveConfig();
+        renderAllConfigUI();
+      });
+    });
+  }
+
+  function renderClassList() {
+    var el = document.getElementById('classList');
+    el.innerHTML = scheduleConfig.classes.length === 0
+      ? '<p style="font-size:12px;color:var(--text-muted)">暂无班级，请在下方添加</p>'
+      : '<div class="cfg-tag-list">' + scheduleConfig.classes.map(function(c, i) {
+          return '<span class="cfg-tag">' + escHtml(c.name) + '<span class="remove class-del" data-idx="' + i + '">✕</span></span>';
+        }).join('') + '</div>';
+    el.querySelectorAll('.class-del').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var idx = parseInt(this.dataset.idx);
+        var clsName = scheduleConfig.classes[idx].name;
+        scheduleConfig.classes.splice(idx, 1);
+        delete scheduleConfig.courseSettings[clsName];
+        delete scheduleConfig.teacherAssignments[clsName];
+        saveConfig();
+        renderAllConfigUI();
+      });
+    });
+  }
+
+  function renderTeacherList() {
+    var el = document.getElementById('teacherList');
+    var allSubs = getAllSubjects();
+    el.innerHTML = scheduleConfig.teachers.length === 0
+      ? '<p style="font-size:12px;color:var(--text-muted)">暂无教师，请在下方添加</p>'
+      : scheduleConfig.teachers.map(function(t, i) {
+          return '<div class="cfg-row" style="margin-bottom:8px;padding:8px;background:#f8fafc;border-radius:8px">' +
+            '<span style="font-weight:600;min-width:60px">' + escHtml(t.name) + '</span>' +
+            '<span style="font-size:12px;color:var(--text-muted)">科目：</span>' +
+            allSubs.map(function(s) {
+              return '<label style="font-size:11px;cursor:pointer;display:inline-flex;align-items:center;gap:2px">' +
+                '<input type="checkbox" ' + (t.subjects.indexOf(s) >= 0 ? 'checked' : '') + ' data-teacher="' + i + '" data-subject="' + escAttr(s) + '" class="tch-subj-cb">' + s +
+                '</label>';
+            }).join('') +
+            '<br><span style="font-size:11px;color:var(--text-muted)">日上限</span>' +
+            '<input type="number" value="' + (t.maxDaily || 4) + '" data-teacher="' + i + '" class="tch-max-daily" style="width:46px" min="1" max="12" title="每日最大课时">' +
+            '<span style="font-size:11px;color:var(--text-muted);margin-left:8px">晚自习</span>' +
+            '<span style="font-size:11px;color:var(--text-muted)">节数≤</span>' +
+            '<input type="number" value="' + (t.maxEveningPerWeek != null ? t.maxEveningPerWeek : 9) + '" data-teacher="' + i + '" class="tch-max-evperiod" style="width:46px" min="0" max="9" title="每周晚自习节数上限，9=不限">' +
+            '<span style="font-size:11px;color:var(--text-muted);margin-left:8px">天数</span>' +
+            '<input type="number" value="' + (t.minEveningDays || 0) + '" data-teacher="' + i + '" class="tch-min-evdays" style="width:46px" min="0" max="7" title="每周含晚自习天数下限">' +
+            '<span style="font-size:11px;color:var(--text-muted)">~</span>' +
+            '<input type="number" value="' + (t.maxEveningDays != null ? t.maxEveningDays : 9) + '" data-teacher="' + i + '" class="tch-max-evdays" style="width:46px" min="0" max="7" title="每周含晚自习天数上限，9=不限">' +
+            '<span style="font-size:11px;color:var(--text-muted);margin-left:6px">排法</span>' +
+            '<select class="tch-ev-mode" data-teacher="' + i + '" style="font-size:11px;padding:3px 4px;border:1px solid #e2e8f0;border-radius:4px" title="晚自习排列方式">' +
+            '<option value="不限"' + ((t.eveningMode||'不限')==='不限'?' selected':'') + '>不限</option>' +
+            '<option value="连续"' + ((t.eveningMode||'不限')==='连续'?' selected':'') + '>连续</option>' +
+            '<option value="间隔"' + ((t.eveningMode||'不限')==='间隔'?' selected':'') + '>间隔</option>' +
+            '</select>' +
+            '<button class="btn-mini danger teacher-del" data-idx="' + i + '" style="margin-left:auto">✕</button>' +
+            '</div>';
+        }).join('');
+    el.querySelectorAll('.tch-subj-cb').forEach(function(cb) {
+      cb.addEventListener('change', function() {
+        var ti = parseInt(this.dataset.teacher);
+        var sub = this.dataset.subject;
+        if (this.checked) {
+          if (scheduleConfig.teachers[ti].subjects.indexOf(sub) < 0) scheduleConfig.teachers[ti].subjects.push(sub);
+        } else {
+          scheduleConfig.teachers[ti].subjects = scheduleConfig.teachers[ti].subjects.filter(function(s) { return s !== sub; });
+        }
+        saveConfig();
+        renderCourseSettingsTable();
+      });
+    });
+    el.querySelectorAll('.tch-max-daily').forEach(function(inp) {
+      inp.addEventListener('change', function() {
+        scheduleConfig.teachers[parseInt(this.dataset.teacher)].maxDaily = parseInt(this.value) || 4;
+        saveConfig();
+      });
+    });
+    el.querySelectorAll('.tch-max-evperiod').forEach(function(inp) {
+      inp.addEventListener('change', function() {
+        scheduleConfig.teachers[parseInt(this.dataset.teacher)].maxEveningPerWeek = parseInt(this.value);
+        if (isNaN(scheduleConfig.teachers[parseInt(this.dataset.teacher)].maxEveningPerWeek)) scheduleConfig.teachers[parseInt(this.dataset.teacher)].maxEveningPerWeek = 9;
+        saveConfig();
+      });
+    });
+    el.querySelectorAll('.tch-max-evdays').forEach(function(inp) {
+      inp.addEventListener('change', function() {
+        scheduleConfig.teachers[parseInt(this.dataset.teacher)].maxEveningDays = parseInt(this.value);
+        if (isNaN(scheduleConfig.teachers[parseInt(this.dataset.teacher)].maxEveningDays)) scheduleConfig.teachers[parseInt(this.dataset.teacher)].maxEveningDays = 9;
+        saveConfig();
+      });
+    });
+    el.querySelectorAll('.tch-min-evdays').forEach(function(inp) {
+      inp.addEventListener('change', function() {
+        scheduleConfig.teachers[parseInt(this.dataset.teacher)].minEveningDays = parseInt(this.value) || 0;
+        saveConfig();
+      });
+    });
+    el.querySelectorAll('.tch-ev-mode').forEach(function(sel) {
+      sel.addEventListener('change', function() {
+        scheduleConfig.teachers[parseInt(this.dataset.teacher)].eveningMode = this.value;
+        saveConfig();
+      });
+    });
+    el.querySelectorAll('.teacher-del').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        scheduleConfig.teachers.splice(parseInt(this.dataset.idx), 1);
+        saveConfig();
+        renderAllConfigUI();
+      });
+    });
+  }
+
+  function renderCourseSettingsTable() {
+    var el = document.getElementById('courseSettingsTable');
+    var classes = scheduleConfig.classes;
+    var allSubs = getAllSubjects();
+    if (!classes.length) {
+      el.innerHTML = '<p style="font-size:12px;color:var(--text-muted)">请先在「基础设置」中添加班级</p>';
+      return;
+    }
+    var html = '<table class="cfg-table"><thead><tr><th>班级</th>';
+    allSubs.forEach(function(s) {
+      html += '<th style="min-width:100px">' + s + '<br><span style="font-weight:400;font-size:10px;color:var(--text-muted)">课时 / 教师</span></th>';
+    });
+    html += '<th>合计</th><th>状态</th></tr></thead><tbody>';
+    var availSlots = scheduleConfig.periods.length * scheduleConfig.workdays.length;
+    classes.forEach(function(cls) {
+      var cs = scheduleConfig.courseSettings[cls.name] || {};
+      var ta = scheduleConfig.teacherAssignments[cls.name] || {};
+      var total = Object.values(cs).reduce(function(a,b) { return a+b; }, 0);
+      html += '<tr><td style="font-weight:600;background:#f8fafc;min-width:70px">' + escHtml(cls.name) + '</td>';
+      allSubs.forEach(function(s) {
+        // 获取可教此科目的教师列表
+        var eligibleTeachers = scheduleConfig.teachers.filter(function(t) {
+          return t.subjects.indexOf(s) >= 0;
+        });
+        var assignedId = ta[s] || '';
+        html += '<td style="padding:3px 4px">';
+        html += '<input type="number" class="cs-input" data-class="' + escAttr(cls.name) + '" data-subject="' + escAttr(s) + '" value="' + (cs[s] || 0) + '" min="0" max="99" style="width:38px;font-size:11px;margin-bottom:2px"' + ((cs[s] || 0) > 0 && eligibleTeachers.length === 0 ? ' class="warn"' : '') + '>';
+        html += '<select class="cs-teacher" data-class="' + escAttr(cls.name) + '" data-subject="' + escAttr(s) + '" style="width:72px;font-size:10px;padding:2px 3px;border:1px solid #e2e8f0;border-radius:4px"' + (eligibleTeachers.length === 0 && (cs[s] || 0) > 0 ? ' title="无对应教师"' : '') + '>';
+        html += '<option value="">自动</option>';
+        eligibleTeachers.forEach(function(t) {
+          html += '<option value="' + t.id + '"' + (assignedId === t.id ? ' selected' : '') + '>' + escHtml(t.name) + '</option>';
+        });
+        html += '</select>';
+        html += '</td>';
+      });
+      var warn = total > availSlots;
+      html += '<td class="row-total' + (warn ? ' warn' : '') + '">' + total + '</td>';
+      html += '<td>' + (warn ? '<span class="badge badge-err">超' + (total - availSlots) + '节</span>' : '<span class="badge badge-ok">OK</span>') + '</td>';
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    el.innerHTML = html;
+
+    // 课时变更
+    el.querySelectorAll('.cs-input').forEach(function(inp) {
+      inp.addEventListener('change', function() {
+        var clsName = this.dataset.class;
+        var sub = this.dataset.subject;
+        var val = parseInt(this.value) || 0;
+        if (!scheduleConfig.courseSettings[clsName]) scheduleConfig.courseSettings[clsName] = {};
+        scheduleConfig.courseSettings[clsName][sub] = val;
+        saveConfig();
+        renderCourseSettingsTable();
+      });
+    });
+
+    // 教师分配变更
+    el.querySelectorAll('.cs-teacher').forEach(function(sel) {
+      sel.addEventListener('change', function() {
+        var clsName = this.dataset.class;
+        var sub = this.dataset.subject;
+        if (!scheduleConfig.teacherAssignments[clsName]) scheduleConfig.teacherAssignments[clsName] = {};
+        scheduleConfig.teacherAssignments[clsName][sub] = this.value;
+        saveConfig();
+      });
+    });
+  }
+
+  function renderFixedSlots() {
+    var el = document.getElementById('fixedSlotList');
+    var fs = scheduleConfig.constraints.fixedSlots;
+    el.innerHTML = fs.length === 0
+      ? '<p style="font-size:12px;color:var(--text-muted)">暂无固定时段</p>'
+      : fs.map(function(f, i) {
+          var cls = scheduleConfig.classes.find(function(c) { return c.id === f.classId; });
+          var tch = scheduleConfig.teachers.find(function(t) { return t.id === f.teacherId; });
+          return '<div class="cfg-row"><span class="cfg-tag">' + escHtml(cls?cls.name:'?') + ' · ' + f.weekday + ' · 第' + (f.periodIdx+1) + '节 · ' + escHtml(f.subject) + (tch ? ' · ' + tch.name : '') +
+            '<span class="remove fixed-del" data-idx="' + i + '">✕</span></span></div>';
+        }).join('');
+    el.querySelectorAll('.fixed-del').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        scheduleConfig.constraints.fixedSlots.splice(parseInt(this.dataset.idx), 1);
+        saveConfig();
+        renderAllConfigUI();
+      });
+    });
+    var fsClass = document.getElementById('fsClass');
+    fsClass.innerHTML = scheduleConfig.classes.map(function(c) { return '<option value="' + c.id + '">' + escHtml(c.name) + '</option>'; }).join('');
+    var fsPeriod = document.getElementById('fsPeriod');
+    fsPeriod.innerHTML = scheduleConfig.periods.map(function(p, i) { return '<option value="' + i + '">' + escHtml(p.name) + '</option>'; }).join('');
+    var fsTeacher = document.getElementById('fsTeacher');
+    fsTeacher.innerHTML = '<option value="">--不指定教师--</option>' + scheduleConfig.teachers.map(function(t) { return '<option value="' + t.id + '">' + escHtml(t.name) + '</option>'; }).join('');
+  }
+
+  function renderNoConsecList() {
+    var el = document.getElementById('noConsecList');
+    el.innerHTML = scheduleConfig.constraints.noConsecutive.map(function(s, i) {
+      return '<span class="cfg-tag">' + escHtml(s) + '<span class="remove nc-del" data-idx="' + i + '">✕</span></span>';
+    }).join('');
+    el.querySelectorAll('.nc-del').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        scheduleConfig.constraints.noConsecutive.splice(parseInt(this.dataset.idx), 1);
+        saveConfig();
+        renderAllConfigUI();
+      });
+    });
+  }
+
+  function renderTeacherPrefList() {
+    var el = document.getElementById('teacherPrefList');
+    if (!scheduleConfig.teachers.length) {
+      el.innerHTML = '<p style="font-size:12px;color:var(--text-muted)">请先在「基础设置」中添加教师</p>';
+      return;
+    }
+    el.innerHTML = scheduleConfig.teachers.map(function(t, i) {
+      var prefs = t.preferences || {};
+      var html = '<div style="margin-bottom:10px;padding:8px 10px;background:#f8fafc;border-radius:8px">' +
+        '<div style="font-weight:600;font-size:13px;margin-bottom:6px">' + escHtml(t.name) + '</div>';
+      scheduleConfig.workdays.forEach(function(wd) {
+        var dayPrefs = prefs[wd] || [];
+        html += '<div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;flex-wrap:wrap">' +
+          '<span style="font-size:11px;font-weight:600;min-width:32px;color:var(--text-muted)">' + wd.replace('星期','周') + '</span>';
+        scheduleConfig.periods.forEach(function(p, pi) {
+          var checked = dayPrefs.indexOf(pi) >= 0 ? ' checked' : '';
+          var shortName = p.name.replace('上午','上').replace('下午','下').replace('听力/限训','听力');
+          html += '<label style="display:flex;flex-direction:column;align-items:center;cursor:pointer;font-size:10px;color:var(--text-muted);line-height:1.2;user-select:none">' +
+            '<input type="checkbox"' + checked + ' data-teacher="' + i + '" data-wd="' + wd + '" data-pi="' + pi + '" class="tch-pref-cb" style="width:16px;height:16px;cursor:pointer;accent-color:#ef4444" title="' + wd + ' ' + p.name + '">' +
+            '<span>' + shortName + '</span>' +
+            '</label>';
+        });
+        html += '</div>';
+      });
+      html += '</div>';
+      return html;
+    }).join('');
+    el.querySelectorAll('.tch-pref-cb').forEach(function(cb) {
+      cb.addEventListener('change', function() {
+        var ti = parseInt(this.dataset.teacher);
+        var wd = this.dataset.wd;
+        var pi = parseInt(this.dataset.pi);
+        if (!scheduleConfig.teachers[ti].preferences) scheduleConfig.teachers[ti].preferences = {};
+        if (!scheduleConfig.teachers[ti].preferences[wd]) scheduleConfig.teachers[ti].preferences[wd] = [];
+        if (this.checked) {
+          if (scheduleConfig.teachers[ti].preferences[wd].indexOf(pi) < 0) scheduleConfig.teachers[ti].preferences[wd].push(pi);
+        } else {
+          scheduleConfig.teachers[ti].preferences[wd] = scheduleConfig.teachers[ti].preferences[wd].filter(function(x) { return x !== pi; });
+        }
+        saveConfig();
+      });
+    });
+  }
+
+  function renderNewTeacherSubjects() {
+    var el = document.getElementById('newTeacherSubjects');
+    if (!el) return;
+    var allSubs = getAllSubjects();
+    el.innerHTML = allSubs.map(function(s) {
+      return '<label style="font-size:11px;cursor:pointer;display:inline-flex;align-items:center;gap:2px">' +
+        '<input type="checkbox" class="new-tch-subj" value="' + escAttr(s) + '">' + s +
+        '</label>';
+    }).join('');
+  }
+
+  function renderEmptySlots() {
+    var el = document.getElementById('emptySlotList');
+    var es = scheduleConfig.constraints.emptySlots || [];
+    el.innerHTML = es.length === 0
+      ? '<p style="font-size:12px;color:var(--text-muted)">暂无留空时段</p>'
+      : es.map(function(f, i) {
+          var cls = scheduleConfig.classes.find(function(c) { return c.id === f.classId; });
+          return '<div class="cfg-row"><span class="cfg-tag" style="background:#fef2f2;color:#991b1b">' +
+            escHtml(cls?cls.name:'?') + ' · ' + f.weekday + ' · 第' + (f.periodIdx+1) + '节 · 留空' +
+            '<span class="remove empty-del" data-idx="' + i + '">✕</span></span></div>';
+        }).join('');
+    el.querySelectorAll('.empty-del').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        scheduleConfig.constraints.emptySlots.splice(parseInt(this.dataset.idx), 1);
+        saveConfig();
+        renderAllConfigUI();
+      });
+    });
+    // 填充下拉框
+    var esClass = document.getElementById('esClass');
+    esClass.innerHTML = scheduleConfig.classes.map(function(c) { return '<option value="' + c.id + '">' + escHtml(c.name) + '</option>'; }).join('');
+    var esPeriod = document.getElementById('esPeriod');
+    esPeriod.innerHTML = scheduleConfig.periods.map(function(p, i) { return '<option value="' + i + '">' + escHtml(p.name) + '</option>'; }).join('');
+    // 更新工作日选项
+    var esWeekday = document.getElementById('esWeekday');
+    var wdays = scheduleConfig.workdayMode === 'weekend' ? WEEKEND_WORKDAYS : DEFAULT_WORKDAYS;
+    esWeekday.innerHTML = wdays.map(function(w) { return '<option value="' + w + '">' + w + '</option>'; }).join('');
+  }
+
+  function renderRotatingGroups() {
+    var el = document.getElementById('rotatingGroupList');
+    var groups = scheduleConfig.constraints.rotatingGroups || [];
+    if (!groups.length) {
+      el.innerHTML = '<p style="font-size:12px;color:var(--text-muted)">暂无走班组</p>';
+    } else {
+      el.innerHTML = groups.map(function(g, gi) {
+        var members = g.subjects.map(function(m) {
+          var cls = scheduleConfig.classes.find(function(c) { return c.id === m.classId; });
+          return (cls ? cls.name : '?') + ' ' + m.subject;
+        });
+        var icon = members.length >= 2 ? '🔗' : '📌';
+        return '<div style="margin-bottom:6px;padding:8px 10px;background:#f0fdf4;border-radius:8px;border:1px solid #bbf7d0">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">' +
+          '<strong style="font-size:12px;color:#166534">' + icon + ' ' + escHtml(g.name || '走班组' + (gi+1)) + '</strong>' +
+          '<span class="remove rg-del" data-idx="' + gi + '" style="cursor:pointer;color:#9ca3af;font-size:14px" title="删除该组">✕</span>' +
+          '</div>' +
+          '<div style="font-size:11px;color:#4d7c0f">' +
+          members.map(function(m) { return '<span style="background:#dcfce7;padding:2px 8px;border-radius:4px;margin-right:4px">' + escHtml(m) + '</span>'; }).join('') +
+          '</div>' +
+          '<div style="font-size:10px;color:#84cc16;margin-top:4px">⏱ 排课时这些科目自动对齐到同一时段</div>' +
+          '</div>';
+      }).join('');
+    }
+    el.querySelectorAll('.rg-del').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        scheduleConfig.constraints.rotatingGroups.splice(parseInt(this.dataset.idx), 1);
+        saveConfig();
+        renderAllConfigUI();
+      });
+    });
+    // 填充下拉框
+    var rgClass = document.getElementById('rgClass');
+    rgClass.innerHTML = scheduleConfig.classes.map(function(c) { return '<option value="' + c.id + '">' + escHtml(c.name) + '</option>'; }).join('');
+    var rgSubject = document.getElementById('rgSubject');
+    var allSubs = getAllSubjects();
+    rgSubject.innerHTML = allSubs.map(function(s) { return '<option value="' + s + '">' + s + '</option>'; }).join('');
+  }
+
+  // ===== 清空约束按钮（事件委托） =====
+  (function() {
+    document.querySelector('#schedulerCard .sched-body').addEventListener('click', function(e) {
+      var btn = e.target.closest('.clear-constraint');
+      if (!btn) return;
+      var target = btn.dataset.target;
+      if (!confirm('确定清空此项下所有设置吗？')) return;
+      if (target === 'fixedSlots') scheduleConfig.constraints.fixedSlots = [];
+      else if (target === 'noConsecutive') scheduleConfig.constraints.noConsecutive = [];
+      else if (target === 'emptySlots') scheduleConfig.constraints.emptySlots = [];
+      else if (target === 'rotatingGroups') scheduleConfig.constraints.rotatingGroups = [];
+      else if (target === 'teacherPrefs') {
+        scheduleConfig.teachers.forEach(function(t) { t.preferences = {}; });
+      }
+      saveConfig();
+      renderAllConfigUI();
+    });
+  })();
+
+  // ===== 留空时段：全选班级 =====
+  document.getElementById('esAllClasses').addEventListener('change', function() {
+    var sel = document.getElementById('esClass');
+    if (!sel) return;
+    if (this.checked) {
+      sel.disabled = true;
+      sel.setAttribute('data-prev', sel.value);
+    } else {
+      sel.disabled = false;
+    }
+  });
+
+  function renderAllConfigUI() {
+    renderPeriodList();
+    renderClassList();
+    renderTeacherList();
+    renderFixedSlots();
+    renderNoConsecList();
+    renderEmptySlots();
+    renderRotatingGroups();
+    renderTeacherPrefList();
+    renderNewTeacherSubjects();
+    // 更新数据概览
+    var overview = document.getElementById('dataOverview');
+    var os = document.getElementById('overviewStatus');
+    if (overview && os) {
+      var hasData = scheduleConfig.classes.length || scheduleConfig.teachers.length;
+      overview.style.display = hasData ? 'block' : 'none';
+      var parts = [];
+      if (scheduleConfig.classes.length) parts.push(scheduleConfig.classes.length + '个班');
+      if (scheduleConfig.teachers.length) parts.push(scheduleConfig.teachers.length + '位教师');
+      os.textContent = parts.join(' · ') || '无数据';
+      os.className = 'cfg-status ok';
+    }
+    // 更新时段状态
+    var ps = document.getElementById('periodStatus');
+    if (ps) { ps.textContent = scheduleConfig.periods.length ? scheduleConfig.periods.length + '个时段' : '未设置'; ps.className = 'cfg-status ' + (scheduleConfig.periods.length ? 'ok' : 'warn'); }
+    // 导入后折叠时段
+  }
+
+  // ========== 排课事件绑定 ==========
+  document.getElementById('addPeriodBtn').addEventListener('click', function() {
+    scheduleConfig.periods.push({ name: '新节次', time: '' });
+    saveConfig();
+    renderAllConfigUI();
+  });
+
+  // 时段模板：下载
+  document.getElementById('downloadPeriodTemplateBtn').addEventListener('click', function() {
+    if (typeof XLSX === 'undefined') { alert('依赖库未加载，请检查网络后刷新页面。'); return; }
+    var wb = XLSX.utils.book_new();
+    var data = [['节次名称', '时间范围'], ['早读', '7:20-7:50'], ['上午1', '8:00-8:45'], ['上午2', '8:55-9:40'], ['上午3', '10:00-10:45'], ['上午4', '10:55-11:40'], ['下午1', '14:30-15:15'], ['下午2', '15:25-16:10'], ['下午3', '16:20-17:05'], ['晚1', '18:40-19:25'], ['晚2', '19:35-20:20'], ['晚3', '20:30-21:15'], ['晚4', '21:25-22:10']];
+    var ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = [{wch: 12}, {wch: 16}];
+    XLSX.utils.book_append_sheet(wb, ws, '时段模板');
+    XLSX.writeFile(wb, '课表通_时段模板.xlsx');
+  });
+
+  // 时段模板：上传导入
+  document.getElementById('uploadPeriodTemplateBtn').addEventListener('click', function() {
+    document.getElementById('periodTemplateInput').click();
+  });
+  document.getElementById('periodTemplateInput').addEventListener('change', function() {
+    if (!this.files[0]) return;
+    if (typeof XLSX === 'undefined') { alert('依赖库未加载，请检查网络后刷新页面。'); return; }
+    var self = this;
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        var data = new Uint8Array(e.target.result);
+        var wb = XLSX.read(data, { type: 'array' });
+        var sn = wb.SheetNames[0];
+        var ws = wb.Sheets[sn];
+        var raw = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        var newPeriods = [];
+        raw.forEach(function(row, ri) {
+          if (ri === 0) return;
+          var name = String(row[0] || '').trim();
+          var time = String(row[1] || '').trim();
+          if (!name) return;
+          newPeriods.push({ name: name, time: time });
+        });
+        if (!newPeriods.length) { alert('未识别到时段数据'); return; }
+        scheduleConfig.periods = newPeriods;
+        saveConfig();
+        renderAllConfigUI();
+        alert('导入完成：' + newPeriods.length + ' 个时段（已覆盖原有设置）');
+      } catch(err) { alert('模板解析失败：' + err.message); }
+    };
+    reader.readAsArrayBuffer(self.files[0]);
+    self.value = '';
+  });
+
+  // 手动添加班级/教师（保留兼容，元素可能不存在）
+  var _addClassBtn = document.getElementById('addClassBtn');
+  if (_addClassBtn) _addClassBtn.addEventListener('click', function() {
+    var inp = document.getElementById('newClassName');
+    if (!inp) return;
+    var name = inp.value.trim();
+    if (!name) return;
+    if (scheduleConfig.classes.some(function(c) { return c.name === name; })) { alert('班级已存在'); return; }
+    scheduleConfig.classes.push({ id: genId(), name: name });
+    scheduleConfig.courseSettings[name] = {};
+    scheduleConfig.teacherAssignments[name] = {};
+    inp.value = '';
+    saveConfig();
+    renderAllConfigUI();
+  });
+  var _newClassName = document.getElementById('newClassName');
+  if (_newClassName) _newClassName.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { var b = document.getElementById('addClassBtn'); if (b) b.click(); }
+  });
+  var _addTeacherBtn = document.getElementById('addTeacherBtn');
+  if (_addTeacherBtn) _addTeacherBtn.addEventListener('click', function() {
+    var inp = document.getElementById('newTeacherName');
+    if (!inp) return;
+    var name = inp.value.trim();
+    if (!name) return;
+    if (scheduleConfig.teachers.some(function(t) { return t.name === name; })) { alert('教师已存在'); return; }
+    var subjects = [];
+    document.querySelectorAll('.new-tch-subj:checked').forEach(function(cb) { subjects.push(cb.value); });
+    scheduleConfig.teachers.push({ id: genId(), name: name, subjects: subjects, maxDaily: 4, maxEveningPerWeek: 9, maxEveningDays: 9, minEveningDays: 0, eveningMode: '不限', preferences: {} });
+    document.querySelectorAll('.new-tch-subj:checked').forEach(function(cb) { cb.checked = false; });
+    saveConfig();
+    renderAllConfigUI();
+  });
+
+  // ========== 综合配置模板：一键导入班级+科目+教师 ==========
+
+  // 下载综合模板
+  document.getElementById('downloadFullTemplateBtn').addEventListener('click', function() {
+    if (typeof XLSX === 'undefined') { alert('依赖库未加载，请检查网络后刷新页面。'); return; }
+    var wb = XLSX.utils.book_new();
+    var data = [
+      ['班级', '科目', '周课时', '教师', '日最大课时', '晚节数上限', '晚天数下限', '晚天数上限', '晚自习模式'],
+      ['高一1班', '数学', 5, '张老师', 4, 9, 0, 9, '不限'],
+      ['高一1班', '语文', 5, '李老师', 4, 9, 0, 9, '不限'],
+      ['高一1班', '英语', 5, '王老师', 4, 9, 0, 9, '不限'],
+      ['高一1班', '物理', 3, '赵老师', 4, 9, 0, 9, '不限'],
+      ['高一2班', '数学', 5, '张老师', 4, 9, 0, 9, '不限'],
+      ['高一2班', '语文', 5, '李老师', 4, 9, 0, 9, '不限'],
+      ['高一2班', '英语', 5, '王老师', 4, 9, 0, 9, '不限'],
+      ['高一3班', '数学', 5, '张老师', 4, 9, 0, 9, '不限'],
+      ['高一3班', '语文', 5, '李老师', 4, 9, 0, 9, '不限']
+    ];
+    var ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = [{wch: 14}, {wch: 10}, {wch: 10}, {wch: 12}, {wch: 12}, {wch: 13}, {wch: 13}, {wch: 13}, {wch: 13}];
+    // 晚自习模式列：添加单元格注释说明可选值
+    var modeHeaderCell = XLSX.utils.encode_cell({r:0, c:8});
+    if (!ws[modeHeaderCell]) ws[modeHeaderCell] = {t:'s', v:'晚自习模式'};
+    ws[modeHeaderCell].c = [{t:'注：请填写 不限 / 连续 / 间隔'}];
+    XLSX.utils.book_append_sheet(wb, ws, '综合配置');
+    XLSX.writeFile(wb, '课表通_综合配置模板.xlsx');
+  });
+
+  // 上传综合模板
+  document.getElementById('uploadFullTemplateBtn').addEventListener('click', function() {
+    document.getElementById('fullTemplateInput').click();
+  });
+  document.getElementById('fullTemplateInput').addEventListener('change', function() {
+    if (!this.files[0]) return;
+    importFullTemplate(this.files[0]);
+    this.value = '';
+  });
+
+  function importFullTemplate(file) {
+    if (typeof XLSX === 'undefined') { alert('依赖库未加载，请检查网络后刷新页面。'); return; }
+    var reader = new FileReader();
+    reader.onload = function(e) {
+      try {
+        var data = new Uint8Array(e.target.result);
+        var wb = XLSX.read(data, { type: 'array' });
+        var sn = wb.SheetNames[0];
+        var ws = wb.Sheets[sn];
+        var raw = XLSX.utils.sheet_to_json(ws, { header: 1 });
+        var newClasses = 0, newTeachers = 0, totalRows = 0;
+
+        raw.forEach(function(row, ri) {
+          if (ri === 0) return; // 跳过表头
+          var className = String(row[0] || '').trim();
+          var subject = String(row[1] || '').trim();
+          var hours = parseInt(row[2]) || 0;
+          var teacherName = String(row[3] || '').trim();
+          var maxDaily = parseInt(row[4]) || 4;
+          var maxEvPeriod = parseInt(row[5]);
+          var minEvDays = parseInt(row[6]);
+          var maxEvDays = parseInt(row[7]);
+          if (isNaN(maxEvPeriod)) maxEvPeriod = 9;
+          var evMode = String(row[8] || '').trim() || '不限';
+          if (isNaN(minEvDays)) minEvDays = 0;
+          if (isNaN(maxEvDays)) maxEvDays = 9;
+          if (!className || !subject || hours <= 0) return;
+
+          // 添加班级（如果不存在）
+          if (!scheduleConfig.classes.some(function(c) { return c.name === className; })) {
+            scheduleConfig.classes.push({ id: genId(), name: className });
+            scheduleConfig.courseSettings[className] = {};
+            scheduleConfig.teacherAssignments[className] = {};
+            newClasses++;
+          }
+
+          // 设置课时
+          if (!scheduleConfig.courseSettings[className]) scheduleConfig.courseSettings[className] = {};
+          scheduleConfig.courseSettings[className][subject] = hours;
+
+          // 教师分配
+          if (teacherName) {
+            if (!scheduleConfig.teacherAssignments[className]) scheduleConfig.teacherAssignments[className] = {};
+            var existingTeacher = scheduleConfig.teachers.find(function(t) { return t.name === teacherName; });
+            if (!existingTeacher) {
+              scheduleConfig.teachers.push({ id: genId(), name: teacherName, subjects: [subject], maxDaily: maxDaily, maxEveningPerWeek: maxEvPeriod, maxEveningDays: maxEvDays, minEveningDays: minEvDays, eveningMode: evMode, preferences: {} });
+              scheduleConfig.teacherAssignments[className][subject] = scheduleConfig.teachers[scheduleConfig.teachers.length-1].id;
+              newTeachers++;
+            } else {
+              if (existingTeacher.subjects.indexOf(subject) < 0) {
+                existingTeacher.subjects.push(subject);
+              }
+              // 更新限制（以模板中的值为准）
+              existingTeacher.maxDaily = maxDaily;
+              existingTeacher.maxEveningPerWeek = maxEvPeriod;
+              existingTeacher.maxEveningDays = maxEvDays;
+              existingTeacher.minEveningDays = minEvDays;
+              existingTeacher.eveningMode = evMode;
+              scheduleConfig.teacherAssignments[className][subject] = existingTeacher.id;
+            }
+          }
+          totalRows++;
+        });
+
+        cleanTeachers();
+        saveConfig();
+        renderAllConfigUI();
+        alert('导入完成！\n班级 ' + newClasses + ' 个（共 ' + scheduleConfig.classes.length + ' 个）\n教师 ' + newTeachers + ' 位（共 ' + scheduleConfig.teachers.length + ' 位）\n课程配置 ' + totalRows + ' 条');
+      } catch(err) { alert('模板解析失败：' + err.message); }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  document.getElementById('addFixedSlotBtn').addEventListener('click', function() {
+    var classId = document.getElementById('fsClass').value;
+    var weekday = document.getElementById('fsWeekday').value;
+    var periodIdx = parseInt(document.getElementById('fsPeriod').value);
+    var subject = document.getElementById('fsSubject').value.trim();
+    var teacherId = document.getElementById('fsTeacher').value;
+    if (!classId || !subject) return;
+    scheduleConfig.constraints.fixedSlots.push({ classId: classId, weekday: weekday, periodIdx: periodIdx, subject: subject, teacherId: teacherId || null });
+    saveConfig();
+    renderAllConfigUI();
+  });
+
+  document.getElementById('addNoConsecBtn').addEventListener('click', function() {
+    var val = document.getElementById('newNoConsec').value.trim();
+    if (!val) return;
+    if (scheduleConfig.constraints.noConsecutive.indexOf(val) < 0) {
+      scheduleConfig.constraints.noConsecutive.push(val);
+      saveConfig();
+      renderAllConfigUI();
+    }
+    document.getElementById('newNoConsec').value = '';
+  });
+
+  document.getElementById('addEmptySlotBtn').addEventListener('click', function() {
+    var allClasses = document.getElementById('esAllClasses').checked;
+    var periodIdx = parseInt(document.getElementById('esPeriod').value);
+    var allWeekdays = document.getElementById('esAllWeekdays').checked;
+    var classIds = allClasses ? scheduleConfig.classes.map(function(c) { return c.id; }) : [document.getElementById('esClass').value];
+    if (!classIds.length || !classIds[0]) return;
+    if (!scheduleConfig.constraints.emptySlots) scheduleConfig.constraints.emptySlots = [];
+    var wdays = allWeekdays ? scheduleConfig.workdays : [document.getElementById('esWeekday').value];
+    var added = 0, skipped = 0;
+    classIds.forEach(function(cid) {
+      wdays.forEach(function(wd) {
+        var exists = scheduleConfig.constraints.emptySlots.some(function(s) {
+          return s.classId === cid && s.weekday === wd && s.periodIdx === periodIdx;
+        });
+        if (exists) { skipped++; return; }
+        scheduleConfig.constraints.emptySlots.push({ classId: cid, weekday: wd, periodIdx: periodIdx });
+        added++;
+      });
+    });
+    saveConfig();
+    renderAllConfigUI();
+  });
+
+  // 走班组：添加
+  document.getElementById('addToRotatingGroupBtn').addEventListener('click', function() {
+    var classId = document.getElementById('rgClass').value;
+    var subject = document.getElementById('rgSubject').value;
+    var groupName = document.getElementById('rgGroupName').value.trim();
+    if (!classId || !subject) return;
+    if (!scheduleConfig.constraints.rotatingGroups) scheduleConfig.constraints.rotatingGroups = [];
+    // 查找同名组或创建新组
+    var group = scheduleConfig.constraints.rotatingGroups.find(function(g) { return g.name === groupName && groupName; });
+    if (!group) {
+      group = { name: groupName || '走班组' + (scheduleConfig.constraints.rotatingGroups.length + 1), subjects: [] };
+      scheduleConfig.constraints.rotatingGroups.push(group);
+    }
+    // 检查是否重复
+    if (!group.subjects.some(function(m) { return m.classId === classId && m.subject === subject; })) {
+      group.subjects.push({ classId: classId, subject: subject });
+    }
+    saveConfig();
+    renderAllConfigUI();
+    // 保留组名和科目方便继续添加
+    document.getElementById('rgGroupName').value = groupName;
+    document.getElementById('rgSubject').value = subject;
+  });
+
+  document.getElementById('importConfigBtn').addEventListener('click', function() {
+    var input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = function() {
+      var reader = new FileReader();
+      reader.onload = function(e) {
+        try {
+          var data = JSON.parse(e.target.result);
+          scheduleConfig.periods = data.periods || JSON.parse(JSON.stringify(DEFAULT_PERIODS));
+          scheduleConfig.weekendPeriods = data.weekendPeriods || JSON.parse(JSON.stringify(defaultConfig().weekendPeriods));
+          scheduleConfig.classes = data.classes || [];
+          scheduleConfig.teachers = data.teachers || [];
+          scheduleConfig.courseSettings = data.courseSettings || {};
+          scheduleConfig.teacherAssignments = data.teacherAssignments || {};
+          scheduleConfig.constraints = data.constraints || { fixedSlots: [], noConsecutive: [], emptySlots: [] };
+          scheduleConfig.workdays = data.workdays || [...DEFAULT_WORKDAYS];
+          scheduleConfig.workdayMode = data.workdayMode || 'weekday';
+          saveConfig();
+          renderAllConfigUI();
+          alert('配置导入成功');
+        } catch(err) { alert('JSON 解析失败'); }
+      };
+      reader.readAsText(input.files[0]);
+    };
+    input.click();
+  });
+
+  document.getElementById('exportConfigBtn').addEventListener('click', function() {
+    var blob = new Blob([JSON.stringify(scheduleConfig, null, 2)], { type: 'application/json' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = '课表通_排课配置.json';
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  });
+
+  document.getElementById('resetConfigBtn').addEventListener('click', function() {
+    if (confirm('确定要清空所有排课配置吗？此操作不可撤销。')) {
+      resetConfigData();
+    }
+  });
+
+  function executeScheduler() {
+    var errors = validateConfig(scheduleConfig);
+    if (errors.length) {
+      document.getElementById('schedProgress').innerHTML = '<span class="step-err">❌ 配置错误：</span><br>' + errors.map(function(e) { return '· ' + escHtml(e); }).join('<br>');
+      document.querySelector('#schedulerCard .sched-tab[data-tab="3"]').click();
+      return;
+    }
+
+    var progressEl = document.getElementById('schedProgress');
+    var steps = [];
+    progressEl.innerHTML = '⏳ 正在排课...';
+
+    setTimeout(function() {
+      try {
+        var result = runScheduler(scheduleConfig, function(msg) {
+          steps.push(msg);
+          progressEl.innerHTML = '⏳ 正在排课...<br>' + steps.map(function(s) { return '· ' + s; }).join('<br>');
+        });
+
+        steps.push('完成！共排 ' + result.placed + '/' + result.total + ' 课时');
+        if (result.optimized > 0) steps.push('优化调整 ' + result.optimized + ' 处');
+        progressEl.innerHTML = (result.conflicts.length === 0 ? '<span class="step-ok">✅' : '<span class="step-err">⚠️') + ' 排课完成</span><br>' + steps.map(function(s) { return '· ' + s; }).join('<br>');
+
+        if (result.conflicts.length > 0) {
+          progressEl.innerHTML += '<br><br><span class="step-err">⚠️ 存在 ' + result.conflicts.length + ' 个冲突：</span><br>' +
+            result.conflicts.slice(0, 10).map(function(c) { return '· ' + escHtml(c.msg); }).join('<br>');
+          if (result.conflicts.length > 10) progressEl.innerHTML += '<br>...等共 ' + result.conflicts.length + ' 个冲突';
+        }
+
+        // 根据当前排课模式存储结果
+        var _isWeekend = scheduleConfig.workdayMode === 'weekend';
+        if (_isWeekend) { weekendScheduleData = result.scheduleData; }
+        scheduleData = result.scheduleData;
+        teacherSet = new Set();
+        result.scheduleData.matrix.forEach(function(row) { row.forEach(function(cell) {
+          if (cell.teacher) teacherSet.add(cell.teacher);
+        }); });
+        cleanTeachers();
+
+        uploadArea.classList.add('uploaded');
+        document.getElementById('uploadedName').textContent = '排课生成';
+        document.getElementById('uploadedSize').textContent = scheduleConfig.classes.length + '个班 · ' + scheduleConfig.teachers.length + '位教师';
+        document.getElementById('formatTag').textContent = _isWeekend ? '周末排课' : '自动排课';
+        document.getElementById('formatTag').style.display = '';
+        searchBar.style.display = 'flex';
+        scheduleCard.style.display = 'block';
+        document.getElementById('teacherCount').textContent = teacherSet.size;
+        document.getElementById('scheduleTitle').textContent = '课程表 · ' + (_isWeekend ? '周六周日' : '周一至周五');
+        highlightName = ''; nameInput.value = ''; legend.style.display = 'none';
+        matchInfo.innerHTML = '';
+        teacherStats.innerHTML = '共 ' + result.scheduleData.colLabels.length + ' 列 · ' + result.scheduleData.periods.length + ' 个时段 · ' + teacherSet.size + ' 位教师';
+        document.getElementById('exportPdfBtn').disabled = false;
+        document.getElementById('exportExcelBtn').disabled = false;
+        document.getElementById('calcBtn').disabled = false;
+        document.getElementById('headerClearBtn').style.display = '';
+        visibleCols = null;
+        renderSchedule();
+
+        document.querySelector('#schedulerCard .sched-tab[data-tab="3"]').click();
+        // 滚动到课表展示区
+        setTimeout(function() { scheduleCard.scrollIntoView({ behavior: 'smooth', block: 'start' }); }, 300);
+
+      } catch(err) {
+        progressEl.innerHTML = '<span class="step-err">❌ 排课失败：' + escHtml(err.message) + '</span>';
+        console.error(err);
+      }
+    }, 50);
+  }
+
+  document.getElementById('startSchedBtn').addEventListener('click', function() {
+    document.querySelector('#schedulerCard .sched-tab[data-tab="3"]').click();
+    executeScheduler();
+  });
+
+  document.getElementById('runSchedBtn').addEventListener('click', executeScheduler);
+
+  // 初始化
+  // ========== 排课模式切换（周一至周五 / 周六周日） ==========
+  var weekendScheduleData = null; // 存储周末排课结果
+
+  function switchWorkdayMode(mode) {
+    // 保存当前排课结果
+    if (scheduleConfig.workdayMode === 'weekday' && scheduleData) {
+      // 暂不保存，用全局变量即可
+    }
+    if (scheduleConfig.workdayMode === 'weekend' && weekendScheduleData) {
+      // 同上
+    }
+
+    scheduleConfig.workdayMode = mode;
+    if (mode === 'weekday') {
+      scheduleConfig.workdays = [...DEFAULT_WORKDAYS];
+      document.getElementById('modeWeekdayBtn').classList.add('active');
+      document.getElementById('modeWeekendBtn').classList.remove('active');
+      // 恢复周一至周五的排课结果
+      if (scheduleData) {
+        var sd = scheduleData;
+        scheduleData = weekendScheduleData;
+        weekendScheduleData = sd;
+      }
+      if (!scheduleData && weekendScheduleData) {
+        scheduleData = null; // 如果没有weekday结果，保持空
+      }
+    } else {
+      scheduleConfig.workdays = [...WEEKEND_WORKDAYS];
+      document.getElementById('modeWeekendBtn').classList.add('active');
+      document.getElementById('modeWeekdayBtn').classList.remove('active');
+      // 保存当前结果，切换到周末结果
+      if (scheduleData && scheduleConfig.classes.length > 0) {
+        var wd = scheduleData;
+        scheduleData = weekendScheduleData;
+        weekendScheduleData = wd;
+      }
+      if (!scheduleData && weekendScheduleData) {
+        scheduleData = weekendScheduleData;
+      }
+    }
+
+    // 更新固定时段下拉框中的工作日选项
+    var fsWeekday = document.getElementById('fsWeekday');
+    var wdays = mode === 'weekday' ? DEFAULT_WORKDAYS : WEEKEND_WORKDAYS;
+    fsWeekday.innerHTML = wdays.map(function(w) { return '<option value="' + w + '">' + w + '</option>'; }).join('');
+
+    // 重渲染
+    saveConfig();
+    renderAllConfigUI();
+
+    // 恢复课表展示
+    if (scheduleData) {
+      scheduleCard.style.display = 'block';
+      document.getElementById('scheduleTitle').textContent = '课程表 · ' + (mode === 'weekday' ? '周一至周五' : '周六周日');
+      renderSchedule();
+    } else {
+      scheduleCard.style.display = 'none';
+    }
+  }
+
+  document.getElementById('modeWeekdayBtn').addEventListener('click', function() {
+    if (scheduleConfig.workdayMode !== 'weekday') switchWorkdayMode('weekday');
+  });
+  document.getElementById('modeWeekendBtn').addEventListener('click', function() {
+    if (scheduleConfig.workdayMode !== 'weekend') switchWorkdayMode('weekend');
+  });
+
+  loadConfig();
+  // 初始化时设置正确的模式状态
+  if (scheduleConfig.workdayMode === 'weekend') {
+    scheduleConfig.workdays = [...WEEKEND_WORKDAYS];
+    document.getElementById('modeWeekendBtn').classList.add('active');
+    document.getElementById('modeWeekdayBtn').classList.remove('active');
+    var fsWeekday = document.getElementById('fsWeekday');
+    fsWeekday.innerHTML = WEEKEND_WORKDAYS.map(function(w) { return '<option value="' + w + '">' + w + '</option>'; }).join('');
+  }
+  renderAllConfigUI();
+
+  // ========== 主导航切换 ==========
+  (function initMainTabs() {
+    var mtabs = document.querySelectorAll('#mainTabs .main-tab');
+    var mpanes = document.querySelectorAll('.main-pane');
+    mtabs.forEach(function(tab) {
+      tab.addEventListener('click', function() {
+        mtabs.forEach(function(t) { t.classList.remove('active'); });
+        mpanes.forEach(function(p) { p.classList.remove('active'); });
+        this.classList.add('active');
+        var idx = this.dataset.main;
+        var pane = document.querySelector('.main-pane[data-main-pane="' + idx + '"]');
+        if (pane) pane.classList.add('active');
+        // 切换到课表排课时清除筛选，显示全部课表
+        if (idx === '0') {
+          nameInput.value = ''; highlightName = ''; visibleCols = null;
+          legend.style.display = 'none'; matchInfo.innerHTML = ''; teacherStats.innerHTML = '';
+          if (scheduleData) renderSchedule();
+        }
+        // 切换到课时计算时自动渲染
+        if (idx === '2') {
+          var now = new Date();
+          document.getElementById('calcMonth').value = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+          if (scheduleData && highlightName) renderCalc();
+        }
+      });
+    });
+  })();
+
+  // 拖拽上传
+  ['dragenter','dragover'].forEach(ev => {
+    document.body.addEventListener(ev, e => { e.preventDefault(); uploadArea.classList.add('drag-over'); });
+  });
+  ['dragleave','drop'].forEach(ev => {
+    document.body.addEventListener(ev, e => { e.preventDefault(); uploadArea.classList.remove('drag-over'); });
+  });
+  document.body.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) processFile(f); });
+  uploadArea.addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => { if (fileInput.files[0]) processFile(fileInput.files[0]); });
+  document.getElementById('clearBtn').addEventListener('click', e => { e.stopPropagation(); reset(); });
+  document.getElementById('headerClearBtn').addEventListener('click', reset);
+
+  // 搜索（不再实时筛选，点确定才执行）
+  let visibleCols = null; // null=全部显示, Set=显示的列索引
+
+  nameInput.addEventListener('input', function() {
+    renderSuggestions(this.value.trim());
+  });
+  nameInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') { e.preventDefault(); doSearch(); }
+  });
+  nameInput.addEventListener('focus', () => { if (teacherSet.size > 0) renderSuggestions(nameInput.value.trim()); });
+  nameInput.addEventListener('blur', () => { setTimeout(() => suggestions.classList.remove('show'), 200); });
+  suggestions.addEventListener('click', function(e) {
+    const item = e.target.closest('.item');
+    if (item) { nameInput.value = item.dataset.name; suggestions.classList.remove('show'); doSearch(); }
+  });
+
+  document.getElementById('confirmBtn').addEventListener('click', doSearch);
+
+  document.getElementById('selfOnly').addEventListener('change', () => renderSchedule());
+
+  document.getElementById('clearSearchBtn').addEventListener('click', () => {
+    nameInput.value = ''; highlightName = ''; visibleCols = null;
+    legend.style.display = 'none'; matchInfo.innerHTML = ''; teacherStats.innerHTML = '';
+    renderSchedule();
+  });
+
+  function doSearch() {
+    const val = nameInput.value.trim();
+    if (!val) {
+      highlightName = ''; visibleCols = null; legend.style.display = 'none';
+      matchInfo.innerHTML = ''; teacherStats.innerHTML = ''; renderSchedule(); return;
+    }
+    applyHighlight(val);
+    // 计算哪些列有匹配（筛选后隐藏无匹配的班级列）
+    if (scheduleData) {
+      visibleCols = new Set();
+      scheduleData.matrix.forEach(row => {
+        row.forEach((cell, ci) => {
+          if (cell.teacher && cell.teacher.includes(val)) visibleCols.add(ci);
+        });
+      });
+    }
+    renderSchedule();
+  }
+
+
+  // ========== 导出功能 ==========
+  document.getElementById('exportPdfBtn').addEventListener('click', () => window.print());
+  document.getElementById('exportExcelBtn').addEventListener('click', exportExcel);
+
+  function exportExcel() {
+    if (!scheduleData) return;
+    const { colLabels, periods, matrix } = scheduleData;
+
+    const visCols = [];
+    colLabels.forEach((cl, ci) => {
+      if (!visibleCols || visibleCols.has(ci)) visCols.push({ ...cl, origIdx: ci });
+    });
+
+    const mergeMap = [];
+    let pw = '', start = 2, span = 0;
+    visCols.forEach((cl, i) => {
+      if (cl.weekday !== pw) {
+        if (pw) mergeMap.push({ start: start + 1, span });
+        pw = cl.weekday; start = 2 + i; span = 1;
+      } else span++;
+    });
+    if (pw) mergeMap.push({ start: start + 1, span });
+
+    let html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head><meta charset="UTF-8"><!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>课表</x:Name><x:WorksheetOptions><x:Panes></x:Panes></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]--></head>
+<body><table border="1" cellpadding="0" cellspacing="0" style="border-collapse:collapse">`;
+
+    html += '<col width="100"><col width="72">';
+    visCols.forEach(() => { html += '<col width="100">'; });
+
+    html += '<tr style="height:32px">';
+    html += '<th rowspan="2" style="background:#f1f5f9;color:#475569;font-size:12px;font-weight:600;text-align:center">时间</th>';
+    html += '<th rowspan="2" style="background:#e2e8f0;color:#334155;font-size:12px;font-weight:700;text-align:center">节次</th>';
+    mergeMap.forEach(m => {
+      const wd = visCols[m.start - 3]?.weekday || '';
+      html += `<th colspan="${m.span}" style="background:#4f46e5;color:#fff;font-size:14px;font-weight:700;text-align:center;padding:6px 4px">${wd}</th>`;
+    });
+    html += '</tr>';
+
+    html += '<tr style="height:28px">';
+    visCols.forEach(cl => {
+      html += `<th style="background:#6366f1;color:#eef2ff;font-size:12px;font-weight:500;text-align:center;padding:3px 4px">${escHtml(cl.class || '')}</th>`;
+    });
+    html += '</tr>';
+
+    periods.forEach((p, ri) => {
+      html += '<tr style="height:48px">';
+      html += `<td style="background:#f8fafc;color:#475569;font-size:11px;text-align:center;font-weight:500">${escHtml(p.time)}</td>`;
+      html += `<td style="background:#f1f5f9;color:#334155;font-size:12px;text-align:center;font-weight:600">${escHtml(p.name)}</td>`;
+      const rd = matrix[ri] || [];
+      visCols.forEach(vc => {
+        const cell = rd[vc.origIdx];
+        const isHL = highlightName && cell && cell.teacher && cell.teacher.includes(highlightName);
+        if (!cell || (!cell.subject && !cell.teacher)) {
+          html += '<td style="color:#d1d5db;background:#fafafa;text-align:center;font-size:12px">—</td>';
+        } else {
+          const bg = isHL ? '#fef3c7' : '#fff';
+          const bd = isHL ? 'border:2px solid #f59e0b' : '';
+          const sub = cell.subject ? `<span style="font-weight:${isHL?'700':'500'};color:${isHL?'#92400e':'#1e293b'};font-size:12px">${escHtml(cell.subject)}</span>` : '';
+          const tch = cell.teacher ? `<br><span style="font-size:10px;color:${isHL?'#b45309':'#64748b'};font-weight:${isHL?'600':'400'}">${escHtml(cell.teacher)}</span>` : '';
+          html += `<td style="text-align:center;vertical-align:middle;background:${bg};padding:6px 4px;${bd}">${sub}${tch}</td>`;
+        }
+      });
+      html += '</tr>';
+    });
+
+    html += '</table></body></html>';
+
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = '课表通结果.xls';
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+  }
+
+  // ========== 工具函数 ==========
+  function parseCellInfo(cellText) {
+    if (!cellText || cellText === '—' || cellText === '-') return { subject: '', teacher: '' };
+    const lines = cellText.split(/[\n\r]+/).filter(Boolean);
+    let subject = '', teacher = '';
+    if (lines.length >= 2) { subject = lines[0]; teacher = lines.slice(1).join(' '); }
+    else if (lines.length === 1) {
+      const s = lines[0];
+      if (s === '—' || s === '-') return { subject: '', teacher: '' };
+      if (s.length <= 5 && !/[科目课程学科自习训理]/.test(s)) teacher = s; else subject = s;
+    }
+    teacher.split(/[\s,，、]+/).forEach(t => { t = t.trim(); if (t && t.length >= 2 && t.length <= 6) teacherSet.add(t); });
+    return { subject, teacher };
+  }
+  function cleanTeachers() {
+    const v = new Set();
+    teacherSet.forEach(t => { if (t.length >= 2 && !/^\d+$/.test(t) && !/^[a-z]+$/i.test(t)) v.add(t); });
+    teacherSet = v;
+  }
+  function formatSize(b) { return b < 1024 ? b + ' B' : b < 1048576 ? (b/1024).toFixed(1) + ' KB' : (b/1048576).toFixed(1) + ' MB'; }
+  function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+  function escAttr(s) { return String(s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+  // ========== 格式检测 ==========
+  function detectFormat(rawRows) {
+    // 识别课表通导出的格式：Row0="时间|节次|星期一|..."，Row1为班级名
+    if (rawRows.length >= 3) {
+      const r0 = rawRows[0] || [];
+      if ((r0[0]||'').trim() === '时间' && (r0[1]||'').trim() === '节次' && r0.some(c => /周[一二三四五六日天]|星期[一二三四五六日天]/.test(c||''))) {
+        return 'period-grid';
+      }
+    }
+    for (let i = 0; i < Math.min(rawRows.length, 12); i++) {
+      if (/高[一二三]/.test(rawRows[i][0]||'') && /\d+班/.test(rawRows[i][0]||'')) return 'class-row';
+    }
+    // 合并格式：前两行有"日期/星期"+"时间"+"节次"表头 + 列头含班级名 + A列有星期标记
+    if (rawRows.length > 2) {
+      const r0 = rawRows[0] || [], r1 = rawRows[1] || [], r2 = rawRows[2] || [];
+      const allRows = [...r0, ...r1, ...r2];
+      const hasDateOrWeek = allRows.some(c => /日期|星期/.test(c||''));
+      const hasTime = allRows.some(c => (c||'').includes('时间'));
+      const hasPeriod = allRows.some(c => /节次|^节$/.test(c||''));
+      const hasClassCols = allRows.some(c => /\d+班/.test(c||'')) || allRows.some(c => /[八九十三]\(\d+\)/.test(c||''));
+      const hasHeader = hasDateOrWeek && hasTime && hasPeriod && hasClassCols;
+      let hasWDinA = false;
+      for (let i = 1; i < Math.min(rawRows.length, 40); i++) {
+        if (/^星期[一二三四五六日天]$/.test((rawRows[i][0]||'').trim())) { hasWDinA = true; break; }
+      }
+      if (hasHeader && hasWDinA) return 'concat';
+    }
+    // 双行格式：A列有星期标记(文字或数字) + C/D列有节次 + 存在上下行配对模式
+    let hasWeekdayDR = false, hasPeriodNumDR = false, hasDoubleRow = false;
+    for (let i = 0; i < Math.min(rawRows.length, 80); i++) {
+      const a = (rawRows[i][0]||'').trim();
+      const c = (rawRows[i][2]||'').trim();
+      const d = (rawRows[i][3]||'').trim();
+      if (/^周[一二三四五六日天]$/.test(a) || /^[1-7]$/.test(a)) hasWeekdayDR = true;
+      if (/^\d+$/.test(c) || /^\d+$/.test(d)) hasPeriodNumDR = true;
+      // 检测双行配对：连续两行的D列值相同且下一行无时间/节次信息
+      if (i > 0 && d && d === (rawRows[i-1][3]||'').trim()) hasDoubleRow = true;
+    }
+    if (hasWeekdayDR && (hasPeriodNumDR || hasDoubleRow)) return 'double-row';
+    for (let i = 0; i < Math.min(rawRows.length, 8); i++) {
+      if (rawRows[i].some(c => /周[一二三四五六日天]|星期[一二三四五六日天]/.test(c))) return 'period-grid';
+    }
+    return 'unknown';
+  }
+
+  function periodOrder(name) {
+    const map = {'早读':1,'上午1':2,'上午2':3,'上午3':4,'上午4':5,'上午5':6,'下午1':7,'下午2':8,'下午3':9,'听力/限训':10,'下午4':11,'下午5':12,'晚1':13,'晚2':14,'晚3':15,'晚4':16};
+    return map[name] || 99;
+  }
+
+  // ========== 文件解析 ==========
+  function processFile(file) {
+    if (!['xlsx','xls'].includes(file.name.split('.').pop().toLowerCase())) { alert('请上传 .xlsx 或 .xls 文件'); return; }
+    const reader = new FileReader();
+    reader.onerror = function() { alert('文件读取失败，请重试。'); };
+    reader.onload = function(e) {
+      try {
+        if (typeof XLSX === 'undefined') { alert('依赖库未加载，请检查网络后刷新页面。'); return; }
+        const data = new Uint8Array(e.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        const sn = wb.SheetNames[0];
+        const ws = wb.Sheets[sn];
+        const merges = ws['!merges'] || [];
+        const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+        const RO = range.s.r, CO = range.s.c;
+
+        const rawRows = [];
+        for (let r = range.s.r; r <= range.e.r; r++) {
+          const row = [];
+          for (let c = range.s.c; c <= range.e.c; c++) {
+            row.push(ws[XLSX.utils.encode_cell({r,c})] ? String(ws[XLSX.utils.encode_cell({r,c})].v??'').trim() : '');
+          }
+          rawRows.push(row);
+        }
+        function rm(m) { return {r1:m.s.r-RO,r2:m.e.r-RO,c1:m.s.c-CO,c2:m.e.c-CO}; }
+
+        teacherSet = new Set();
+        const fmt = detectFormat(rawRows);
+
+        if (fmt === 'class-row') {
+          parseClassRow(rawRows, rm, merges);
+        } else if (fmt === 'concat') {
+          parseConcatFormat(rawRows);
+        } else if (fmt === 'double-row') {
+          parseDoubleRow(rawRows, rm, merges);
+        } else if (fmt === 'period-grid') {
+          parsePeriodGrid(rawRows, rm, merges);
+        } else {
+          // 通用识别作为最后兜底
+          parseAuto(rawRows);
+          fmt = 'auto';
+          return;
+        }
+        cleanTeachers();
+
+        uploadArea.classList.add('uploaded');
+        document.getElementById('uploadedName').textContent = file.name;
+        document.getElementById('uploadedSize').textContent = formatSize(file.size);
+        const tagMap = {'class-row':'班级行→节次网格','double-row':'双行→节次网格','concat':'合并→节次网格','period-grid':'节次网格','auto':'通用识别→节次网格'};
+        document.getElementById('formatTag').textContent = tagMap[fmt] || '节次网格';
+        document.getElementById('formatTag').style.display = '';
+        searchBar.style.display = 'flex';
+        scheduleCard.style.display = 'block';
+        document.getElementById('teacherCount').textContent = teacherSet.size;
+        document.getElementById('scheduleTitle').textContent = '课程表 · ' + sn;
+        highlightName = ''; nameInput.value = ''; matchInfo.innerHTML = ''; legend.style.display = 'none';
+        teacherStats.innerHTML = '共 ' + scheduleData.colLabels.length + ' 列 · ' + scheduleData.periods.length + ' 个时段 · ' + teacherSet.size + ' 位教师';
+        document.getElementById('exportPdfBtn').disabled = false;
+        document.getElementById('exportExcelBtn').disabled = false;
+        document.getElementById('calcBtn').disabled = false;
+        document.getElementById('headerClearBtn').style.display = '';
+        renderSchedule();
+      } catch(err) { alert('文件解析失败：' + err.message); console.error(err); }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  // ========== 解析：合并格式（新高三课表 — 科目教师名合并在同一单元格） ==========
+  // 拆分"科目教师名"（使用全局 SUBJECTS 列表）
+  function splitSubjectTeacher(text) {
+    if (!text) return { subject: '', teacher: '' };
+    // 先匹配已知科目
+    for (const sub of SUBJECTS) {
+      if (text.startsWith(sub)) {
+        const tch = text.slice(sub.length);
+        return { subject: sub, teacher: tch };
+      }
+    }
+    // 回退：前2字=科目，剩余=教师
+    if (text.length >= 3) {
+      return { subject: text.slice(0, 2), teacher: text.slice(2) };
+    }
+    return { subject: text, teacher: '' };
+  }
+
+  function parseConcatFormat(rawRows) {
+    // 合并前三行找表头信息
+    const hRow0 = rawRows[0], hRow1 = rawRows[1] || [], hRow2 = rawRows[2] || [];
+    const allHeaderCells = [...hRow0, ...hRow1, ...hRow2];
+
+    // 找班级列：优先从hRow2找（通常是班级名所在行），回退到hRow1/hRow0
+    const classNames = [];
+    const classRow = hRow2.some(c => /[八九十三]\(\d+\)/.test((c||'').trim())) ? hRow2 :
+                     hRow1.some(c => /[八九十三]\(\d+\)/.test((c||'').trim())) ? hRow1 : hRow0;
+    for (let c = 2; c < classRow.length; c++) {
+      const v = (classRow[c] || '').trim();
+      if (v && (/^\d+班$/.test(v) || /^[八九十三]\(\d+\)$/.test(v)) && !classNames.includes(v)) {
+        classNames.push(v);
+      }
+    }
+    if (!classNames.length) {
+      // 回退：找表头中包含"班"或数字格式的列
+      for (const hr of [hRow2, hRow1, hRow0]) {
+        for (let c = 2; c < hr.length; c++) {
+          const v = (hr[c] || '').trim();
+          if (v && (/\d/.test(v) || v.includes('班')) && !classNames.includes(v)) {
+            classNames.push(v);
+          }
+        }
+        if (classNames.length) break;
+      }
+    }
+    if (!classNames.length) throw new Error('未识别班级列');
+
+    // 智能定位：时间列和节次列（可能B=节次/C=时间 或 B=时间/C=节次）
+    const hasTimeHeader = allHeaderCells.some(c => (c||'').includes('时间'));
+    const hasPeriodHeader = allHeaderCells.some(c => /节次|^节$/.test(c||''));
+
+    // 从表头推断列位置
+    let timeCol = 1, periodCol = 2; // 默认 B=时间, C=节次
+    if (hasTimeHeader || hasPeriodHeader) {
+      for (let c = 1; c <= 2; c++) {
+        const v0 = (hRow0[c] || '').trim(), v1 = (hRow1[c] || '').trim(), v2 = (hRow2[c] || '').trim();
+        if (v0.includes('时间') || v1.includes('时间') || v2.includes('时间')) timeCol = c;
+        if (/节次|^节$/.test(v0) || /节次|^节$/.test(v1) || /节次|^节$/.test(v2)) periodCol = c;
+      }
+    }
+
+    // 找星期起止行
+    const WO = ['星期一','星期二','星期三','星期四','星期五','星期六','星期日'];
+    const weekdayStarts = [];
+    for (let ri = 1; ri < rawRows.length; ri++) {
+      const a = (rawRows[ri][0] || '').trim();
+      const wdMapped = WEEKDAY_MAP[a]; if (wdMapped) weekdayStarts.push({ name: wdMapped, rowIdx: ri });
+    }
+
+    // 收集所有时段（去重）
+    const periodMap = {};
+    const allPeriods = [];
+    const periodData = {};
+
+    weekdayStarts.forEach((wd, wdi) => {
+      const nextRow = wdi + 1 < weekdayStarts.length ? weekdayStarts[wdi + 1].rowIdx : rawRows.length;
+      for (let ri = wd.rowIdx; ri < nextRow; ri++) {
+        const row = rawRows[ri];
+        let timeStr = (row[timeCol] || '').trim();
+        let periodName = (row[periodCol] || '').trim();
+
+        // 处理"早读"的情况
+        if (!periodName && !timeStr) continue;
+        if (timeStr === '早读' || periodName === '早读') { periodName = '早读'; timeStr = ''; }
+        if (!periodName && timeStr && !timeStr.includes(':')) {
+          // 可能是节次名误入时间列（如"大课间"）
+          if (['午饭','午休','晚饭','早自助'].includes(timeStr)) continue;
+          periodName = timeStr;
+          timeStr = '';
+        }
+
+        // 跳过非课节和大课间
+        if (['午饭','午休','晚饭','早自助'].includes(periodName)) continue;
+        if (periodName.includes('大课间')) continue;
+        if (!periodName && !timeStr) continue;
+
+        if (!periodMap.hasOwnProperty(periodName)) {
+          periodMap[periodName] = allPeriods.length;
+          allPeriods.push({ time: timeStr, name: periodName });
+        } else {
+          const pi = periodMap[periodName];
+          if (!allPeriods[pi].time && timeStr) allPeriods[pi].time = timeStr;
+        }
+        const pi = periodMap[periodName];
+
+        classNames.forEach(cn => {
+          const colIdx = 4 + classNames.indexOf(cn);
+          const cellText = (colIdx < row.length ? row[colIdx] : '').trim();
+          if (!cellText) return;
+
+          // 优先用换行符拆分（九年级格式：科目\n教师），回退到连写拆分
+          const cell = parseCellInfo(cellText);
+          let { subject, teacher } = cell;
+          if (!subject && !teacher) {
+            const st = splitSubjectTeacher(cellText);
+            subject = st.subject; teacher = st.teacher;
+          }
+          if (!subject && !teacher) return;
+
+          const key = pi + '|' + wd.name + '|' + cn;
+          if (!periodData[key]) periodData[key] = { subject: '', teacher: '' };
+          if (subject) periodData[key].subject = subject;
+          if (teacher) {
+            periodData[key].teacher = teacher;
+            teacher.split(/[\s,，、]+/).forEach(t => {
+              t = t.trim();
+              if (t && t.length >= 2 && t.length <= 6) teacherSet.add(t);
+            });
+          }
+        });
+      }
+    });
+
+    // 排序时段
+    allPeriods.sort((a, b) => periodOrderConcat(a.name) - periodOrderConcat(b.name));
+
+    // 列映射
+    const colMap = [];
+    WO.forEach(wd => {
+      if (weekdayStarts.some(ws => ws.name === wd))
+        classNames.forEach(cn => colMap.push({ weekday: wd, class: cn }));
+    });
+
+    // 重建 periods 映射
+    const finalPeriods = [];
+    const oldToNew = {};
+    allPeriods.forEach((p, i) => {
+      const oi = periodMap[p.name];
+      oldToNew[oi] = i;
+      finalPeriods.push(p);
+    });
+
+    // 填充矩阵
+    const matrix = Array.from({length: finalPeriods.length}, () =>
+      Array.from({length: colMap.length}, () => ({ subject: '', teacher: '' })));
+
+    Object.keys(periodData).forEach(key => {
+      const [oldPi, wd, cn] = key.split('|');
+      const newPi = oldToNew[parseInt(oldPi)];
+      if (newPi === undefined) return;
+      const coli = colMap.findIndex(cm => cm.weekday === wd && cm.class === cn);
+      if (coli >= 0) matrix[newPi][coli] = periodData[key];
+    });
+
+    scheduleData = { weekdays: colMap.map(c=>c.weekday), classes: colMap.map(c=>c.class), colLabels: colMap, periods: finalPeriods, matrix };
+  }
+
+  function periodOrderConcat(name) {
+    // 数字节次（如"1","2","3"）
+    if (/^\d+$/.test(name)) return parseInt(name) - 1;
+    const map = {'早读':0,'第一节':1,'第二节':2,'第三节':3,'第四节':4,'第五节':5,'第六节':6,'第七节':7,'第八节':8,'听力':9,'第九节':10,'第十节':11,'晚一':12,'晚二':13,'晚三':14,'晚四':15};
+    return map.hasOwnProperty(name) ? map[name] : 99;
+  }
+
+  // ========== 通用自动识别 ==========
+  // 通用自动识别 — 全局语义标记
+  const SKIP_WORDS = ['午饭','午休','晚饭','早自助','大课间','课间','限训'];
+  function isWeekday(s) { return WEEKDAY_MAP.hasOwnProperty(s); }
+  function isTime(s) { return /\d{1,2}:\d{2}[~—\-\s]+\d{1,2}:\d{2}/.test(s); }
+  function isPeriodLabel(s) { return /^(早读|第一节|第二节|第三节|第四节|第五节|第六节|第七节|第八节|第九节|第十节|上午[一二三四五1-5]|下午[一二三四五1-5]|晚[一二三四1-4]|听力|[1-9]\d*)$/.test(s); }
+  function isClassName(s) { return /(\d+班|[八九十三]\(\d+\)|高[一二三].*班|原\d+班)/.test(s); }
+  function isSkipRow(s) { return SKIP_WORDS.some(w => (s||'').includes(w)); }
+
+  function findRowIndex(rawRows, col, pattern, startRow) {
+    for (let r = startRow || 0; r < rawRows.length; r++) {
+      if (pattern.test((rawRows[r][col]||'').trim())) return r;
+    }
+    return -1;
+  }
+
+  function parseAuto(rawRows) {
+    // 快速识别：课表通导出的格式（Row0: 时间|节次|星期一|...，Row1: 班级名，Row2+: 数据）
+    if (rawRows.length >= 3) {
+      const r0 = rawRows[0] || [], r1 = rawRows[1] || [];
+      const hasTimeLabel = r0.some(function(c, i) { return i <= 1 && (c||'').indexOf('时间') >= 0; });
+      const hasPeriodLabel = r0.some(function(c, i) { return i <= 1 && (c||'').indexOf('节次') >= 0; });
+      const hasWeekday = r0.some(function(c) { return /周[一二三四五六日天]|星期[一二三四五六日天]/.test(c||''); });
+      if (hasTimeLabel && hasPeriodLabel && hasWeekday) {
+        // 直接解析导出格式
+        const colMap = [];
+        let lastWD = '';
+        for (let c = 2; c < Math.max(r0.length, r1.length); c++) {
+          const wd = (r0[c]||'').trim();
+          if (wd && /周[一二三四五六日天]|星期[一二三四五六日天]/.test(wd)) lastWD = wd;
+          const cn = (r1[c]||'').trim();
+          if (cn && lastWD) colMap.push({ weekday: lastWD, class: cn, cr: [c, c] });
+        }
+        if (!colMap.length) throw new Error('未识别班级列');
+
+        const periods = [], matrix = [];
+        for (let ri = 2; ri < rawRows.length; ri++) {
+          const row = rawRows[ri] || [];
+          const ts = (row[0]||'').trim(), pn = (row[1]||'').trim();
+          if (!ts && !pn) continue;
+          const rd = colMap.map(function(cm) {
+            const ct = (cm.cr[0] < row.length ? row[cm.cr[0]] : '').trim();
+            return parseCellInfo(ct);
+          });
+          periods.push({ time: ts, name: pn });
+          matrix.push(rd);
+        }
+        if (!periods.length) throw new Error('未识别到时段信息');
+
+        scheduleData = { weekdays: colMap.map(function(c) { return c.weekday; }), classes: colMap.map(function(c) { return c.class; }), colLabels: colMap, periods: periods, matrix: matrix };
+        return;
+      }
+    }
+
+    // === Step 1: 全表扫描，找出所有关键标记的位置 ===
+    const markers = []; // [{row, col, type, value}]
+    for (let r = 0; r < rawRows.length; r++) {
+      for (let c = 0; c < (rawRows[r]||[]).length; c++) {
+        const v = (rawRows[r][c]||'').trim();
+        if (!v) continue;
+        if (isWeekday(v)) markers.push({r, c, type: 'weekday', value: WEEKDAY_MAP[v]});
+        if (isTime(v)) markers.push({r, c, type: 'time', value: v});
+        if (isPeriodLabel(v)) markers.push({r, c, type: 'period', value: v});
+        if (isClassName(v)) markers.push({r, c, type: 'class', value: v});
+      }
+    }
+    if (!markers.length) throw new Error('无法识别任何课表信息');
+
+    // === Step 2: 确定布局方向 ===
+    // 星期日行（同一行有多个weekday）→ 横式；星期同列（同一列有多个weekday）→ 竖式
+    const wdMarkers = markers.filter(m => m.type === 'weekday');
+    const wdRows = new Set(wdMarkers.map(m => m.r));
+    const wdCols = new Set(wdMarkers.map(m => m.c));
+    const isHorizontal = wdRows.size <= 3 && wdMarkers.length > 1; // 星期集中在一两行→横式表头
+    const isVertical = wdCols.size <= 3 && wdCols.size > 0;      // 星期集中在一两列→竖式表头
+
+    // === Step 3: 提取班级列表 ===
+    let classNames = markers.filter(m => m.type === 'class').map(m => m.value);
+    classNames = [...new Set(classNames)];
+
+    // === Step 4: 提取星期列表和范围 ===
+    let weekdayNames = [];
+    let weekdayRowRanges = {}; // {星期一: {startRow, endRow}}
+    let wdRowsSorted = [...wdMarkers].sort((a,b) => a.r - b.r);
+
+    if (isVertical) {
+      // 竖式：星期在某一列，需要确定每个星期的行范围
+      const wdCol = wdCols.values().next().value;
+      const wdRowsList = wdRowsSorted.map(m => m.r);
+      // 扩展星期标记到所有覆盖的行（通过合并单元格或推断）
+      // 简单处理：按weekday出现的行确定范围
+    }
+
+    // === Step 5: 提取时段列表 ===
+    // 尝试识别时间+节次的配对行
+    let periods = [];
+    let periodMap = {}; // 行索引→{time, name}
+
+    if (isVertical) {
+      // 竖式：时间/节次在B/C列，每行一个时段
+      for (let r = 0; r < rawRows.length; r++) {
+        const row = rawRows[r];
+        const timeMarkers = markers.filter(m => m.type === 'time' && m.r === r);
+        const periodMarkers = markers.filter(m => m.type === 'period' && m.r === r);
+
+        // 找到该行最可能的时间和节次（通常在col 1-3）
+        let timeStr = '', periodName = '';
+        for (let c = 1; c <= 3; c++) {
+          const v = (row[c]||'').trim();
+          if (!timeStr && isTime(v)) timeStr = v;
+          if (!periodName && isPeriodLabel(v) && v !== timeStr) periodName = v;
+        }
+        // 也检查数字节次
+        if (!periodName) {
+          for (let c = 1; c <= 2; c++) {
+            const v = (row[c]||'').trim();
+            if (/^\d+$/.test(v) && !isTime(row[1]||'')) { periodName = v; break; }
+          }
+        }
+
+        if ((timeStr || periodName) && !isSkipRow(timeStr) && !isSkipRow(periodName)) {
+          if (!periodMap.hasOwnProperty(periodName||timeStr)) {
+            const p = { time: timeStr, name: periodName || timeStr };
+            periods.push(p);
+            periodMap[periodName||timeStr] = p;
+          }
+        }
+      }
+    } else {
+      // 横式：时间/节次在行表头
+      // 待实现
+    }
+
+    if (!periods.length) throw new Error('未识别到时段信息');
+    if (!classNames.length) throw new Error('未识别到班级信息');
+    if (!wdMarkers.length) throw new Error('未识别到星期信息');
+
+    // === Step 6: 建立 weekday→行范围 映射 ===
+    const weekOrder = ['星期一','星期二','星期三','星期四','星期五','星期六','星期日'];
+    let weekdayRanges = [];
+
+    if (isVertical) {
+      // 找到weekday标记列
+      const wdCol = [...wdCols][0];
+      const wdRows = wdMarkers.filter(m => m.c === wdCol).sort((a,b) => a.r - b.r);
+
+      wdRows.forEach((wd, i) => {
+        const nextR = i + 1 < wdRows.length ? wdRows[i+1].r : rawRows.length;
+        weekdayRanges.push({ name: wd.value, startRow: wd.r, endRow: nextR - 1 });
+      });
+    }
+
+    // === Step 7: 为每个时段行确定所属星期 ===
+    const cellData = {}; // key: periodIdx|weekday|className → {subject, teacher}
+
+    periods.forEach((p, pi) => {
+      // 找到该时段在哪些行出现
+      for (let r = 0; r < rawRows.length; r++) {
+        const row = rawRows[r];
+        let rowTime = '', rowPeriod = '';
+        for (let c = 1; c <= 3; c++) {
+          const v = (row[c]||'').trim();
+          if (!rowTime && isTime(v)) rowTime = v;
+          if (!rowPeriod && (isPeriodLabel(v) || /^\d+$/.test(v)) && v !== rowTime) rowPeriod = v;
+        }
+        if (!rowPeriod && !rowTime) continue;
+        const rp = rowPeriod || rowTime;
+        if (rp !== p.name && rp !== p.time) continue;
+        if (isSkipRow(rowPeriod) || isSkipRow(rowTime)) continue;
+
+        // 确定该行属于哪个星期
+        let wdName = '';
+        for (const wr of weekdayRanges) {
+          if (r >= wr.startRow && r <= wr.endRow) { wdName = wr.name; break; }
+        }
+        if (!wdName) continue;
+
+        // 提取该行中每个班级的科目+教师
+        classNames.forEach(cn => {
+          // 找班级对应的列
+          const classMarkers = markers.filter(m => m.type === 'class' && m.value === cn);
+          if (!classMarkers.length) return;
+          const classCol = classMarkers[0].c;
+          if (classCol >= row.length) return;
+
+          const cellText = (row[classCol]||'').trim();
+          if (!cellText) return;
+
+          const cell = parseCellInfo(cellText);
+          let { subject, teacher } = cell;
+          if (!subject && !teacher) {
+            const st = splitSubjectTeacher(cellText);
+            subject = st.subject; teacher = st.teacher;
+          }
+          if (!subject && !teacher) return;
+
+          const key = pi + '|' + wdName + '|' + cn;
+          if (!cellData[key]) cellData[key] = { subject: '', teacher: '' };
+          if (subject) cellData[key].subject = subject;
+          if (teacher) {
+            cellData[key].teacher = teacher;
+            teacher.split(/[\s,，、]+/).forEach(t => {
+              t = t.trim();
+              if (t && t.length >= 2 && t.length <= 6) teacherSet.add(t);
+            });
+          }
+        });
+      }
+    });
+
+    // === Step 8: 构建输出 ===
+    const colMap = [];
+    weekOrder.forEach(wd => {
+      if (weekdayRanges.some(wr => wr.name === wd))
+        classNames.forEach(cn => colMap.push({ weekday: wd, class: cn }));
+    });
+
+    const matrix = Array.from({length: periods.length}, () =>
+      Array.from({length: colMap.length}, () => ({ subject: '', teacher: '' })));
+
+    Object.keys(cellData).forEach(key => {
+      const [pi, wd, cn] = key.split('|');
+      const coli = colMap.findIndex(cm => cm.weekday === wd && cm.class === cn);
+      if (coli >= 0 && parseInt(pi) < matrix.length) {
+        matrix[parseInt(pi)][coli] = cellData[key];
+      }
+    });
+
+    scheduleData = { weekdays: colMap.map(c=>c.weekday), classes: colMap.map(c=>c.class), colLabels: colMap, periods, matrix };
+  }
+
+  // ========== 解析节次网格格式（李洪博课表） ==========
+  function parsePeriodGrid(rawRows, rm, merges) {
+    let h1 = -1, h2 = -1;
+    for (let i = 0; i < Math.min(10, rawRows.length); i++) {
+      const row = rawRows[i]; if (!row.some(c => c)) continue;
+      if (row.some(c => /周[一二三四五六日天]|星期[一二三四五六日天]/.test(c)) && h1 < 0) h1 = i;
+      else if (row.some(c => /\d+班|小清北|清北/.test(c)) && h2 < 0 && h1 >= 0) h2 = i;
+    }
+    if (h1 < 0) throw new Error('未识别星期表头');
+    const H1 = rawRows[h1], H2 = h2 >= 0 ? rawRows[h2] : null;
+
+    const wrs = [];
+    for (let c = 2; c < H1.length; c++) {
+      if (H1[c] && /周[一二三四五六日天]|星期[一二三四五六日天]/.test(H1[c])) {
+        wrs.push({ name: H1[c], sc: c });
+      }
+    }
+    // 计算每个星期的列范围：到下一个星期标记之前（兼容无合并信息的导出文件）
+    for (let i = 0; i < wrs.length; i++) {
+      wrs[i].ec = i + 1 < wrs.length ? wrs[i+1].sc - 1 : H1.length - 1;
+    }
+
+    const colMap = [];
+    if (H2) {
+      wrs.forEach(wr => {
+        const cs = [];
+        for (let c = wr.sc; c <= wr.ec; c++) { const v = (H2[c]||'').trim(); if (v && !cs.find(x=>x.n===v)) cs.push({n:v,c}); }
+        if (!cs.length) colMap.push({ weekday: wr.name, class: '', cr: [wr.sc, wr.ec] });
+        else cs.forEach((x,i) => { const ec = i<cs.length-1 ? cs[i+1].c-1 : wr.ec; colMap.push({ weekday: wr.name, class: x.n, cr: [x.c, ec] }); });
+      });
+    } else { wrs.forEach(wr => colMap.push({ weekday: wr.name, class: '', cr: [wr.sc, wr.ec] })); }
+
+    const periods = [], matrix = [];
+    for (let ri = Math.max(h1, h2>=0?h2:0)+1; ri < rawRows.length; ri++) {
+      const row = rawRows[ri];
+      const ts = (row[0]||'').trim(), pn = (row[1]||'').trim();
+      if (!ts && !pn && row.every(c=>!c)) continue;
+      const rd = colMap.map(cm => { let ct=''; for(let c=cm.cr[0];c<=cm.cr[1];c++){const v=(c<row.length?row[c]:'').trim();if(v)ct+=(ct?'\n':'')+v;} return parseCellInfo(ct); });
+      if (ts || pn) { periods.push({ time: ts, name: pn }); matrix.push(rd); }
+    }
+    scheduleData = { weekdays: colMap.map(c=>c.weekday), classes: colMap.map(c=>c.class), colLabels: colMap, periods, matrix };
+  }
+
+  // ========== 解析班级行格式（518号新课表）→ 节次网格 ==========
+  function parseClassRow(rawRows, rm, merges) {
+    let wdR = -1, pgR = -1, pdR = -1;
+    for (let i = 0; i < Math.min(6, rawRows.length); i++) {
+      const row = rawRows[i];
+      if (row.some(c => /^星期[一二三四五六日天]$/.test(c)) && wdR < 0) wdR = i;
+      if (row.some(c => /^(上午|下午|晚上|早读)$/.test(c)) && pgR < 0) pgR = i;
+      if (row.some(c => /^\d[\n\r]/.test(c) || /听力/.test(c)) && pdR < 0) pdR = i;
+    }
+    if (wdR < 0 || pdR < 0) throw new Error('未识别518格式表头');
+    if (pgR < 0) pgR = pdR;
+    const wdRow = rawRows[wdR], pgRowRaw = rawRows[pgR], pdRow = rawRows[pdR];
+    // 填充合并单元格：将行2中合并区域的值扩展到所有列
+    const pgRow = [...pgRowRaw];
+    merges.forEach(m => {
+      const rm2 = rm(m);
+      if (rm2.r1 === pgR && rm2.r2 === pgR && rm2.c1 !== rm2.c2) {
+        const val = pgRow[rm2.c1] || '';
+        for (let c = rm2.c1 + 1; c <= rm2.c2; c++) {
+          if (!pgRow[c]) pgRow[c] = val;
+        }
+      }
+    });
+
+    // 星期列范围
+    const wcs = [];
+    for (let c = 0; c < wdRow.length; c++) {
+      if (wdRow[c] && /^星期[一二三四五六日天]$/.test(wdRow[c])) {
+        const m = merges.map(rm).find(x => x.r1===wdR&&x.c1===c);
+        wcs.push({ name: wdRow[c], sc: c, ec: m?m.c2:c });
+      }
+    }
+    if (!wcs.length) throw new Error('未识别星期列');
+
+    // 每星期的节次列表
+    const wps = [];
+    wcs.forEach(wc => {
+      const pcs = [];
+      for (let c = wc.sc; c <= wc.ec; c++) {
+        const detail = (pdRow[c]||'').replace(/[\n\r]+/g,' ').trim();
+        const group = (pgRow[c]||'').trim();
+        if (!detail && !group) continue;
+        let ts = '', ns = '';
+        if (group === '早读') { ns = '早读'; ts = detail; }
+        else if (/^[1-5]\s/.test(detail)) {
+          const n = detail.match(/^(\d)/)[1];
+          const tm = detail.match(/(\d{1,2}:\d{2})[—\-]\s*(\d{1,2}:\d{2})/);
+          ts = tm ? tm[1]+'-'+tm[2] : detail;
+          ns = (group==='上午'?'上午':group==='下午'?'下午':'晚') + n;
+        } else if (/听力|限训/.test(detail)) { ns='听力/限训'; const tm=detail.match(/(\d{1,2}:\d{2})[—\-]\s*(\d{1,2}:\d{2})/); ts=tm?tm[1]+'-'+tm[2]:detail; }
+        else if (/^[1-4]\s/.test(detail) && group==='晚上') {
+          const n=detail.match(/^(\d)/)[1]; const tm=detail.match(/(\d{1,2}:\d{2})[—\-]\s*(\d{1,2}:\d{2})/); ts=tm?tm[1]+'-'+tm[2]:detail; ns='晚'+n;
+        }
+        if (ns||ts) pcs.push({ col: c, key: wc.name+'|'+ns, time: ts, name: ns });
+      }
+      wps.push({ weekday: wc.name, periods: pcs });
+    });
+
+    // 收集所有唯一节次（按名称合并，不区分星期）
+    const periodNameSet = [];
+    wps.forEach(wp => wp.periods.forEach(pc => {
+      if (!periodNameSet.find(p => p.name === pc.name)) {
+        // 尝试从不同星期收集时间信息
+        periodNameSet.push({ name: pc.name, time: pc.time });
+      } else {
+        // 补充时间（如果之前没有）
+        const existing = periodNameSet.find(p => p.name === pc.name);
+        if (!existing.time && pc.time) existing.time = pc.time;
+      }
+    }));
+    periodNameSet.sort((a,b) => periodOrder(a.name) - periodOrder(b.name));
+    const finalPeriods = periodNameSet.map(p => ({ time: p.time, name: p.name }));
+    const pk2i = {}; periodNameSet.forEach((p, i) => { pk2i[p.name] = i; });
+
+    // 班级数据行
+    const cRows = [];
+    for (let ri = pdR+1; ri < rawRows.length; ri++) {
+      const a = (rawRows[ri][0]||'').trim();
+      if (/高[一二三]/.test(a) && /\d+班/.test(a)) cRows.push({ ri, name: a.replace(/[\n\r]+/g,' ').trim() });
+    }
+
+    // 构建列映射
+    const WO = ['星期一','星期二','星期三','星期四','星期五','星期六','星期日'];
+    const classNames = cRows.map(cr => cr.name);
+    const colMap = [];
+    WO.forEach(wd => {
+      if (wcs.some(wc => wc.name === wd))
+        classNames.forEach(cn => colMap.push({ weekday: wd, class: cn }));
+    });
+
+    // 初始化矩阵
+    const matrix = Array.from({length: periodNameSet.length}, () =>
+      Array.from({length: colMap.length}, () => ({ subject: '', teacher: '' })));
+
+    // 填充
+    cRows.forEach((cr, ci) => {
+      const row = rawRows[cr.ri];
+      wps.forEach(wp => {
+        wp.periods.forEach(pc => {
+          const ct = (pc.col < row.length ? row[pc.col] : '').trim();
+          if (!ct) return;
+          const { subject, teacher } = parseCellInfo(ct);
+          const pi = pk2i[pc.name];
+          if (pi === undefined) return;
+          const coli = colMap.findIndex(cm => cm.weekday===wp.weekday && cm.class===cr.name);
+          if (coli >= 0 && (subject||teacher)) {
+            const ex = matrix[pi][coli];
+            ex.subject = ex.subject || subject;
+            ex.teacher = ex.teacher ? ex.teacher + ' ' + teacher : teacher;
+          }
+        });
+      });
+    });
+
+    scheduleData = { weekdays: colMap.map(c=>c.weekday), classes: colMap.map(c=>c.class), colLabels: colMap, periods: finalPeriods, matrix };
+  }
+
+  // ========== 解析：双行格式（2026课表，每个时段占2行：上行科目、下行教师） ==========
+  function parseDoubleRow(rawRows, rm, merges) {
+    // Step 1: 找班级表头（行2-3，列D起）
+    let classHeaderRow = -1, classDetailRow = -1;
+    for (let i = 0; i < Math.min(6, rawRows.length); i++) {
+      const a = (rawRows[i][0] || '').trim();
+      if (a.includes('班级') || a === '星期' || a === '日期') { classHeaderRow = i; break; }
+      
+    }
+    if (classHeaderRow < 0) throw new Error('未识别班级表头');
+
+    // 提取班级名（从表头行，跳过前3列和时间列）
+    const hRow = rawRows[classHeaderRow];
+    const classNames = [];
+    for (let c = 3; c < hRow.length; c++) {
+      const v = (hRow[c] || '').trim();
+      // 班级名必须包含数字，且在开头（如"1日"、"2英"）或包含"班"字
+      if (v && /^\d/.test(v) && v.length >= 2 && !classNames.includes(v)) classNames.push(v);
+      else if (classNames.length > 0 && !v && c > 5) break; // 连续空列后停止
+    }
+
+    // 回退: 检查下一行是否有班级信息
+    if (!classNames.length && classHeaderRow + 1 < rawRows.length) {
+      const h2 = rawRows[classHeaderRow + 1] || [];
+      for (let c = 4; c < h2.length; c++) {
+        const v = (h2[c] || '').trim().replace(/[\n\r]+/g, ' ');
+        if (v && /\d/.test(v) && v.length >= 2 && !classNames.includes(v)) classNames.push(v);
+      }
+    }
+    if (!classNames.length) throw new Error('未识别班级表头');
+
+    // Step 2: 找星期起始行
+    const WO_TEXT = ['周一','周二','周三','周四','周五','周六','周日'];
+    const weekdayStarts = []; // [{name, rowIdx}]
+    let lastWD = '';
+    for (let ri = 0; ri < rawRows.length; ri++) {
+      const a = (rawRows[ri][0] || '').trim();
+      const wdMapped = WEEKDAY_MAP[a];
+      if (wdMapped && wdMapped !== lastWD) {
+        weekdayStarts.push({ name: wdMapped, rowIdx: ri });
+        lastWD = wdMapped;
+      }
+    }
+
+    // Step 3: 扫描每个星期下的时段
+    const allPeriods = []; // [{time, name}]
+    const periodMap = {};  // name -> index in allPeriods
+    const periodData = {}; // (periodIdx, weekday, className) -> {subject, teacher}
+
+    weekdayStarts.forEach((wd, wdi) => {
+      const nextWdRow = wdi + 1 < weekdayStarts.length ? weekdayStarts[wdi + 1].rowIdx : rawRows.length;
+
+      for (let ri = wd.rowIdx + 1; ri < nextWdRow; ri++) {
+        const row = rawRows[ri];
+        // 灵活定位时间和节次列
+        let timeStr = '', periodNum = '';
+        for (let c = 1; c <= 3; c++) {
+          const v = (row[c] || '').trim();
+          if (!timeStr && /\d{1,2}:\d{2}/.test(v)) timeStr = v;
+          if (!periodNum && (v === '早读' || /^\d+$/.test(v))) periodNum = v;
+        }
+
+        // 跳过非时段行
+        if (!timeStr && !periodNum) continue;
+        if (periodNum === '午饭' || periodNum === '午休' || periodNum === '晚饭') continue;
+
+        // 时段名：用C列编号 + A列分组
+        // 时段分组标签：优先从A/B列找含"上午/下午/晚上/早读"的文本
+        const group = (row[1] || '').trim();
+        const groupAlt = (row[0] || '').trim();
+        let periodName = periodNum;
+        if (/(上午|下午|晚上)/.test(groupAlt) && /^\d+$/.test(periodNum)) {
+          const prefix = groupAlt.includes('上午') ? '上午' : groupAlt.includes('下午') ? '下午' : '晚';
+          periodName = prefix + periodNum;
+        } else if (/(上午|下午|晚上)/.test(group) && /^\d+$/.test(periodNum)) {
+          periodName = (group.includes('上午')?'上午':group.includes('下午')?'下午':'晚') + periodNum;
+        }
+
+        // 合并C列检测：该行的下一行是否是与当前行合并的
+        const cMerge = merges.map(rm).find(m => m.r1 === ri && (m.c1 === 2 || m.c1 === 3));
+        const nextRow = ri + 1 < rawRows.length ? rawRows[ri + 1] : null;
+
+        // 注册时段（去重）
+        if (!periodMap.hasOwnProperty(periodName)) {
+          periodMap[periodName] = allPeriods.length;
+          allPeriods.push({ time: timeStr, name: periodName });
+        } else {
+          // 补充时间（如果之前没有）
+          const pi = periodMap[periodName];
+          if (!allPeriods[pi].time && timeStr) allPeriods[pi].time = timeStr;
+        }
+        const pi = periodMap[periodName];
+
+        // 读取第一行：科目
+        classNames.forEach(cn => {
+          const colIdx = 4 + classNames.indexOf(cn);
+          const sub = (row[colIdx] || '').trim();
+          if (sub) {
+            const key = pi + '|' + wd.name + '|' + cn;
+            if (!periodData[key]) periodData[key] = { subject: '', teacher: '' };
+            periodData[key].subject = sub;
+          }
+        });
+
+        // 读取第二行：教师（如果C列合并了，就是下一行；否则当前行的teacher在下一行）
+        if (cMerge && nextRow) {
+          classNames.forEach(cn => {
+            const colIdx = 4 + classNames.indexOf(cn);
+            const tch = (nextRow[colIdx] || '').trim();
+            if (tch) {
+              const key = pi + '|' + wd.name + '|' + cn;
+              if (!periodData[key]) periodData[key] = { subject: '', teacher: '' };
+              periodData[key].teacher = tch;
+              // 收集教师
+              tch.split(/[\s,，、]+/).forEach(t => {
+                t = t.trim();
+                if (t && t.length >= 2 && t.length <= 6) teacherSet.add(t);
+              });
+            }
+          });
+          ri++; // 跳过教师行
+        } else {
+          // 教师可能在同一行（如早读：cell中已经包含科目和教师）
+          classNames.forEach(cn => {
+            const colIdx = 4 + classNames.indexOf(cn);
+            const cellText = (row[colIdx] || '').trim();
+            if (cellText && cellText.includes('\\n')) {
+              const key = pi + '|' + wd.name + '|' + cn;
+              const { subject, teacher } = parseCellInfo(cellText);
+              if (!periodData[key]) periodData[key] = { subject: '', teacher: '' };
+              if (subject) periodData[key].subject = subject;
+              if (teacher) periodData[key].teacher = teacher;
+            }
+          });
+        }
+      }
+    });
+
+    // 排序时段
+    allPeriods.sort((a,b) => periodOrder(a.name) - periodOrder(b.name));
+
+    // 构建列映射
+    const WO = ['星期一','星期二','星期三','星期四','星期五','星期六','星期日'];
+    const colMap = [];
+    WO.forEach(wd => {
+      if (weekdayStarts.some(ws => ws.name === wd)) {
+        classNames.forEach(cn => colMap.push({ weekday: wd, class: cn }));
+      }
+    });
+
+    // 重建 periods（按排序后的顺序）
+    const finalPeriods = [];
+    const oldToNew = {};
+    allPeriods.forEach((p, i) => {
+      const oldIdx = periodMap[p.name];
+      oldToNew[oldIdx] = i;
+      finalPeriods.push(p);
+    });
+
+    // 填充矩阵
+    const matrix = Array.from({length: finalPeriods.length}, () =>
+      Array.from({length: colMap.length}, () => ({ subject: '', teacher: '' })));
+
+    Object.keys(periodData).forEach(key => {
+      const [oldPi, wd, cn] = key.split('|');
+      const newPi = oldToNew[parseInt(oldPi)];
+      if (newPi === undefined) return;
+      const coli = colMap.findIndex(cm => cm.weekday === wd && cm.class === cn);
+      if (coli >= 0) {
+        matrix[newPi][coli] = periodData[key];
+      }
+    });
+
+    scheduleData = { weekdays: colMap.map(c=>c.weekday), classes: colMap.map(c=>c.class), colLabels: colMap, periods: finalPeriods, matrix };
+  }
+
+  // ========== 渲染课表 ==========
+  function renderSchedule() {
+    if (!scheduleData) return;
+    const { colLabels, periods, matrix } = scheduleData;
+    const selfMode = document.getElementById('selfOnly').checked && highlightName;
+
+    // 筛选可见列
+    const visCols = [];
+    colLabels.forEach((cl, ci) => {
+      if (!visibleCols || visibleCols.has(ci)) visCols.push({ ...cl, origIdx: ci });
+    });
+
+    // === 个人课表模式：每周只一列，仅显示本人课程 ===
+    if (selfMode) {
+      const weekdays = [...new Set(visCols.map(vc => vc.weekday))];
+
+      // 为每个时段和星期，收集所有该教师的课程
+      const personalData = {};
+      periods.forEach((p, pi) => {
+        const rd = matrix[pi] || [];
+        visCols.forEach(vc => {
+          const cell = rd[vc.origIdx];
+          if (cell && cell.teacher && cell.teacher.includes(highlightName)) {
+            const key = pi + '|' + vc.weekday;
+            if (!personalData[key]) personalData[key] = [];
+            personalData[key].push({ class: vc.class, subject: cell.subject });
+          }
+        });
+      });
+
+      let html = '<table><thead>';
+      // 教师姓名标题行
+      html += '<tr><th colspan="'+(2+weekdays.length)+'" class="teacher-title">'+escHtml(highlightName)+' 课表</th></tr>';
+      html += '<tr><th class="col-time" rowspan="2">时间</th><th class="col-period" rowspan="2">节次</th>';
+      weekdays.forEach(wd => { html += '<th class="th-weekday">'+wd+'</th>'; });
+      html += '</tr><tr>';
+      weekdays.forEach(() => { html += '<th class="th-class">课程</th>'; });
+      html += '</tr></thead><tbody>';
+
+      periods.forEach((p, ri) => {
+        html += '<tr><td class="col-time">'+escHtml(p.time)+'</td><td class="col-period">'+escHtml(p.name)+'</td>';
+        weekdays.forEach(wd => {
+          const key = ri + '|' + wd;
+          const entries = personalData[key] || [];
+          if (!entries.length) {
+            html += '<td class="empty">—</td>';
+          } else {
+            html += '<td class="highlight">';
+            entries.forEach(e => {
+              html += '<span class="subject">'+escHtml(e.class)+'</span>';
+              html += '<span class="subject">'+escHtml(e.subject)+'</span>';
+              html += '<br>';
+            });
+            html += '</td>';
+          }
+        });
+        html += '</tr>';
+      });
+      html += '</tbody></table>';
+      scheduleScroll.innerHTML = html;
+      return;
+    }
+
+    // === 标准模式 ===
+    let html = '<table><thead>';
+    // 教师姓名标题行
+    if (highlightName) {
+      html += '<tr><th colspan="'+(2+visCols.length)+'" class="teacher-title">'+escHtml(highlightName)+' 课表</th></tr>';
+    }
+    html += '<tr><th class="col-time" rowspan="2">时间</th><th class="col-period" rowspan="2">节次</th>';
+    let pw = '', sp = 0;
+    visCols.forEach((cl, i) => {
+      if (cl.weekday !== pw) {
+        if (pw) html += '<th class="th-weekday" colspan="'+sp+'">'+pw+'</th>';
+        pw = cl.weekday; sp = 1;
+      } else sp++;
+    });
+    if (pw) html += '<th class="th-weekday" colspan="'+sp+'">'+pw+'</th>';
+    html += '</tr><tr>';
+    visCols.forEach(cl => { html += '<th class="th-class">'+escHtml(cl.class||cl.weekday)+'</th>'; });
+    html += '</tr></thead><tbody>';
+
+    periods.forEach((p, ri) => {
+      html += '<tr><td class="col-time">'+escHtml(p.time)+'</td><td class="col-period">'+escHtml(p.name)+'</td>';
+      const rd = matrix[ri] || [];
+      visCols.forEach(vc => {
+        const cell = rd[vc.origIdx];
+        if (!cell || (!cell.subject && !cell.teacher)) { html += '<td class="empty">—</td>'; }
+        else {
+          const hl = highlightName && cell.teacher && cell.teacher.includes(highlightName);
+          html += '<td class="'+(hl?'highlight':'')+'">';
+          if (cell.subject) html += '<span class="subject">'+escHtml(cell.subject)+'</span>';
+          if (cell.teacher) html += '<span class="teacher">'+escHtml(cell.teacher)+'</span>';
+          html += '</td>';
+        }
+      });
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+    scheduleScroll.innerHTML = html;
+  }
+
+  // ========== 高亮（不触发渲染） ==========
+  function applyHighlight(name) {
+    highlightName = name; suggestions.classList.remove('show'); legend.style.display = 'block';
+    let mc = 0;
+    scheduleData.matrix.forEach(row => row.forEach(cell => { if (cell.teacher && cell.teacher.includes(name)) mc++; }));
+    if (mc === 0) { matchInfo.innerHTML = '<span style="color:#ef4444">⚠️ 未找到 "'+escHtml(name)+'" 的课程</span>'; teacherStats.innerHTML = ''; }
+    else {
+      matchInfo.innerHTML = '<span style="color:#16a34a">✅ 找到 '+mc+' 节课</span>';
+      const cs = new Set();
+      scheduleData.matrix.forEach((row, ri) => row.forEach((cell, ci) => { if (cell.teacher&&cell.teacher.includes(name)&&scheduleData.classes[ci]) cs.add(scheduleData.classes[ci]); }));
+      teacherStats.innerHTML = '任教：'+Array.from(cs).map(c=>escHtml(c)).join('、')+' · '+mc+' 节/周';
+    }
+  }
+
+  function renderSuggestions(query) {
+    const arr = Array.from(teacherSet).sort((a,b)=>a.localeCompare(b,'zh'));
+    const f = query ? arr.filter(n => n.includes(query)) : arr;
+    if (!f.length||(query&&f.length===1&&f[0]===query)) { suggestions.classList.remove('show'); return; }
+    suggestions.innerHTML = f.slice(0,15).map(n=>'<div class="item" data-name="'+escAttr(n)+'">'+escHtml(n)+'</div>').join('');
+    suggestions.classList.add('show');
+  }
+
+  function reset() {
+    scheduleData = null; teacherSet = new Set(); highlightName = ''; visibleCols = null; fileInput.value = '';
+    uploadArea.classList.remove('uploaded'); scheduleCard.style.display = 'none';
+    scheduleScroll.innerHTML = '<div class="empty-state"><span class="icon">📂</span><p>请上传课表文件</p></div>';
+    nameInput.value = ''; matchInfo.innerHTML = ''; legend.style.display = 'none'; teacherStats.innerHTML = '';
+    document.getElementById('selfOnly').checked = false;
+    document.getElementById('exportPdfBtn').disabled = true;
+    document.getElementById('exportExcelBtn').disabled = true;
+    document.getElementById('calcBtn').disabled = true;
+    document.getElementById('headerClearBtn').style.display = 'none';
+  }
+
+  // ========== 课时计算 ==========
+  let calcOverrides = {}; // {'2026-06-15': 'holiday'} or {'2026-06-15':{off:[3,4]}}
+  let calcEditDate = null; // 当前正在编辑节次的日期
+
+  document.getElementById('calcBtn').addEventListener('click', () => {
+    // 切换到课时计算主面板
+    var mtabs = document.querySelectorAll('#mainTabs .main-tab');
+    var mpanes = document.querySelectorAll('.main-pane');
+    mtabs.forEach(function(t) { t.classList.remove('active'); });
+    mpanes.forEach(function(p) { p.classList.remove('active'); });
+    var tab2 = document.querySelector('#mainTabs .main-tab[data-main="2"]');
+    var pane2 = document.querySelector('.main-pane[data-main-pane="2"]');
+    if (tab2) tab2.classList.add('active');
+    if (pane2) pane2.classList.add('active');
+    const now = new Date();
+    document.getElementById('calcMonth').value = now.getFullYear() + '-' + String(now.getMonth()+1).padStart(2,'0');
+    renderCalc();
+  });
+  document.getElementById('calcMonth').addEventListener('change', renderCalc);
+
+  // 课程性质分类
+  function classifyPeriod(name) {
+    if (!name) return '其他';
+    if (name.includes('早读')) return '早读';
+    if (name.includes('上午')) return '正课';
+    if (name.includes('下午')) return '正课';
+    if (name.includes('晚')) return '晚自习';
+    if (name.includes('听力')) return '听力';
+    if (/^\d+$/.test(name)) return '正课';
+    if (name.includes('自习')||name.includes('自')) return '自习';
+    if (name.includes('训练')) return '训练';
+    if (name.includes('班会')) return '班会';
+    if (name.includes('午饭')||name.includes('午休')||name.includes('晚饭')) return null;
+    return '正课';
+  }
+
+  function renderCalc() {
+    if (!scheduleData || !highlightName) {
+      document.getElementById('calcCalendar').innerHTML = '<p style="color:var(--text-muted);padding:20px">请先搜索教师姓名</p>';
+      document.getElementById('calcSummary').innerHTML = '';
+      return;
+    }
+
+    const monthVal = document.getElementById('calcMonth').value;
+    if (!monthVal) return;
+    const [year, month] = monthVal.split('-').map(Number);
+
+    // 生成日历
+    const firstDay = new Date(year, month-1, 1);
+    const lastDay = new Date(year, month, 0);
+    const startDow = firstDay.getDay(); // 0=Sun
+    const daysInMonth = lastDay.getDate();
+    const today = new Date();
+    const todayStr = today.getFullYear()+'-'+String(today.getMonth()+1).padStart(2,'0')+'-'+String(today.getDate()).padStart(2,'0');
+
+    const WO = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'];
+    const WEEKDAY_IDX = {0:'星期日',1:'星期一',2:'星期二',3:'星期三',4:'星期四',5:'星期五',6:'星期六'};
+
+    let calHtml = '<table><thead><tr>';
+    ['日','一','二','三','四','五','六'].forEach(d => calHtml += '<th>'+d+'</th>');
+    calHtml += '</tr></thead><tbody>';
+
+    let day = 1;
+    for (let w = 0; w < 6; w++) {
+      calHtml += '<tr>';
+      for (let d = 0; d < 7; d++) {
+        if ((w === 0 && d < startDow) || day > daysInMonth) {
+          calHtml += '<td class="off-month">'+(w===0&&d<startDow?'':(day>daysInMonth?'':''))+'</td>';
+          if (w > 0 && d === 0 && day > daysInMonth) { calHtml += '</tr>'; break; }
+          continue;
+        }
+        const dateStr = year+'-'+String(month).padStart(2,'0')+'-'+String(day).padStart(2,'0');
+        const dow = new Date(year, month-1, day).getDay();
+        const wdName = WEEKDAY_IDX[dow];
+        const isToday = dateStr === todayStr;
+        var override = calcOverrides[dateStr];
+        var isPartial = override && typeof override === 'object' && override.off;
+        var offCount = isPartial ? override.off.length : 0;
+        let cssClass = 'normal';
+        if (override === 'holiday') cssClass = 'holiday';
+        else if (isPartial && offCount > 0) cssClass = 'holiday partial';
+        else if (isPartial) cssClass = 'normal';
+        if (isToday) cssClass += ' today';
+        calHtml += '<td class="'+cssClass+'" data-date="'+dateStr+'" data-wd="'+wdName+'">';
+        calHtml += '<span class="day-num">'+day+'</span><br>'+(override === 'holiday' ? '' : (isPartial && offCount > 0 ? '部分休' : wdName));
+        calHtml += '</td>';
+        day++;
+      }
+      calHtml += '</tr>';
+      if (day > daysInMonth) break;
+    }
+    calHtml += '</tbody></table>';
+
+    // 节次编辑面板（当前编辑日期有部分放假时显示）
+    if (calcEditDate && scheduleData && calcOverrides[calcEditDate] && typeof calcOverrides[calcEditDate] === 'object') {
+      var ev = calcOverrides[calcEditDate];
+      var parts = calcEditDate.split('-');
+      calHtml += '<div style="margin-top:8px;padding:8px 10px;background:#fffbeb;border-radius:8px;border:1px solid #fde68a">';
+      calHtml += '<div style="font-size:11px;font-weight:700;color:#92400e;margin-bottom:4px">📋 ' + parts[1] + '月' + parseInt(parts[2]) + '日 — 勾选=放假不计课：</div>';
+      scheduleData.periods.forEach(function(p, pi) {
+        var checked = ev.off && ev.off.indexOf(pi) >= 0 ? ' checked' : '';
+        calHtml += '<label class="period-cb-label" style="font-size:10px;cursor:pointer;margin-right:4px;white-space:nowrap;display:inline-block;user-select:none">' +
+          '<input type="checkbox" class="period-off-cb" data-pi="' + pi + '" data-date="' + calcEditDate + '"' + checked + ' style="width:12px;height:12px;vertical-align:middle">' +
+          '<span style="vertical-align:middle">' + p.name.replace('上午','上').replace('下午','下') + '</span></label>';
+      });
+      calHtml += '</div>';
+    }
+    document.getElementById('calcCalendar').innerHTML = calHtml;
+    updateCalcSummary();
+
+    // 节次复选框事件
+    document.querySelectorAll('.period-off-cb').forEach(function(cb) {
+      cb.addEventListener('change', function() {
+        var ds = this.dataset.date;
+        var pi = parseInt(this.dataset.pi);
+        var ov = calcOverrides[ds];
+        if (!ov || typeof ov !== 'object') { ov = { off: [] }; calcOverrides[ds] = ov; }
+        if (!ov.off) ov.off = [];
+        if (this.checked) {
+          if (ov.off.indexOf(pi) < 0) ov.off.push(pi);
+        } else {
+          ov.off = ov.off.filter(function(x) { return x !== pi; });
+        }
+        updateCalcSummary();
+      });
+    });
+  }
+
+  // 日历点击（事件委托）
+  document.getElementById('calcCalendar').addEventListener('click', function(e) {
+    // 不处理节次复选框点击
+    if (e.target.closest('.period-cb-label')) return;
+    const td = e.target.closest('td');
+    if (!td || td.classList.contains('off-month')) return;
+    const dateStr = td.dataset.date;
+    if (!dateStr) return;
+
+    var current = calcOverrides[dateStr];
+    var isPartial = current && typeof current === 'object' && current.off;
+
+    if (!current) {
+      // 正常 → 放假（全休）
+      calcOverrides[dateStr] = 'holiday';
+      calcEditDate = dateStr;
+    } else if (current === 'holiday') {
+      // 全休 → 进入节次编辑模式
+      calcOverrides[dateStr] = { off: [] };
+      calcEditDate = dateStr;
+    } else if (isPartial) {
+      // 节次编辑 → 恢复正常
+      delete calcOverrides[dateStr];
+      calcEditDate = null;
+    } else {
+      delete calcOverrides[dateStr];
+      calcEditDate = null;
+    }
+    renderCalc();
+  });
+
+  function updateCalcSummary() {
+    if (!scheduleData || !highlightName) return;
+    const { colLabels, periods, matrix } = scheduleData;
+    const monthVal = document.getElementById('calcMonth').value;
+    if (!monthVal) return;
+    const [year, month] = monthVal.split('-').map(Number);
+    const daysInMonth = new Date(year, month, 0).getDate();
+
+    // 按课程性质统计节数
+    const stats = {}; // {type: count}
+    let grandTotal = 0;
+
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dateStr = year+'-'+String(month).padStart(2,'0')+'-'+String(d).padStart(2,'0');
+      const dow = new Date(year, month-1, d).getDay();
+      const naturalWD = ['星期日','星期一','星期二','星期三','星期四','星期五','星期六'][dow];
+      var override = calcOverrides[dateStr];
+      if (override === 'holiday') continue;
+      var partialOff = (override && typeof override === 'object' && override.off) ? override.off : null;
+      if (['星期六','星期日'].includes(naturalWD)) continue;
+
+      const weekdayCols = [];
+      colLabels.forEach((cl, ci) => {
+        const clWD = WEEKDAY_MAP[cl.weekday] || cl.weekday;
+        if (clWD === naturalWD) weekdayCols.push({...cl, origIdx: ci});
+      });
+
+      periods.forEach((p, pi) => {
+        // 部分放假：跳过被标记的节次
+        if (partialOff && partialOff.indexOf(pi) >= 0) return;
+        const rd = matrix[pi] || [];
+        const type = classifyPeriod(p.name);
+        if (!type) return;
+
+        weekdayCols.forEach(wc => {
+          const cell = rd[wc.origIdx];
+          if (cell && cell.teacher && cell.teacher.includes(highlightName)) {
+            if (!stats[type]) stats[type] = 0;
+            stats[type]++;
+            grandTotal++;
+          }
+        });
+      });
+    }
+
+    // 渲染汇总表
+    let sumHtml = '<h4>'+highlightName+' · '+year+'年'+month+'月 课时汇总</h4>';
+    sumHtml += '<table><thead><tr><th>课程性质</th><th>节数</th></tr></thead><tbody>';
+    const typeOrder = ['正课','早读','晚自习','自习','听力','班会','训练','其他'];
+    typeOrder.forEach(type => {
+      if (stats[type]) {
+        sumHtml += '<tr><td>'+type+'</td><td>'+stats[type]+'</td></tr>';
+      }
+    });
+    Object.keys(stats).forEach(type => {
+      if (!typeOrder.includes(type)) {
+        sumHtml += '<tr><td>'+type+'</td><td>'+stats[type]+'</td></tr>';
+      }
+    });
+    sumHtml += '<tr class="total-row"><td>合计</td><td>'+grandTotal+'</td></tr>';
+    sumHtml += '</tbody></table>';
+    document.getElementById('calcSummary').innerHTML = sumHtml;
+  }
+})();
+</script>
+</body>
+</html>
